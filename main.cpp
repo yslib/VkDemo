@@ -22,7 +22,7 @@ constexpr int MAX_FRAMES = 2;
 
 
 #ifndef __APPLE__
-const std::vector<const char*> validationLayers = { "VK_LAYER_LUNARG_standard_validation" };
+const std::vector<const char*> validationLayers = { "VK_LAYER_LUNARG_standard_validation"};
 #else
 const std::vector<const char*> validationLayers = {};
 #endif
@@ -115,12 +115,22 @@ struct Vertex
 	
 };
 
+//const std::vector<Vertex> vertices = {
+//	{{.0f,-.5f},{1.f,1.f,1.f}},
+//	{{.5f,.5f},{0.f,1.f,0.f}},
+//	{{-0.5f,.5f},{0.f,0.f,1.f}}
+//};
 const std::vector<Vertex> vertices = {
-	{{.0f,-.5f},{1.f,1.f,1.f}},
-	{{.5f,.5f},{0.f,1.f,0.f}},
-	{{-0.5f,.5f},{0.f,0.f,1.f}}
+	{{-0.5f,-0.5f},{1.0f,0.0f,0.0f}},
+{{0.5f,-0.5f},{0.f,1.0f,0.0f}},
+{{0.5f,0.5f},{0.f,0.f,1.f}},
+{{-0.5f,0.5f},{1.f,1.f,1.f}}
 };
 
+
+
+const std::vector < uint16_t > indices= {
+0,1,2,2,3,0};
 
 
 
@@ -142,6 +152,8 @@ VkPipeline m_pipeline;
 VkCommandPool m_commandPool;
 VkBuffer m_vertexBuffer;
 VkDeviceMemory m_vertexBufferMemory;
+VkBuffer m_indexBuffer;
+VkDeviceMemory m_indexBufferMemory;
 size_t m_currentFrame = 0;
 
 //VkSemaphore imageAvailableSmp;
@@ -207,6 +219,7 @@ void CleanupSwapChain();
 void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& memory);
 void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size); 
 void CreateVertexBuffer();
+void CreateIndexBuffer();
 uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);;
 
 
@@ -255,7 +268,7 @@ std::vector<const char*> GetRequiredExtensions()
 	{
 		extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
 	}
-
+	
 	return extensions;
 }
 
@@ -360,7 +373,7 @@ bool CheckValidationLayerSupport()
 
 bool CreateInstance()
 {
-
+	
 	if (!glfwInit())
 	{
 		throw std::runtime_error("failed to init glfw");
@@ -380,13 +393,15 @@ bool CreateInstance()
 	appInfo.pApplicationName = "Vulkan Demo";
 	appInfo.applicationVersion = 1;
 	appInfo.apiVersion = VK_MAKE_VERSION(1, 0, 0);
+	appInfo.pEngineName = "No Engine";
+	appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
 
 	instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 	instanceInfo.pNext = nullptr;
 	instanceInfo.ppEnabledExtensionNames = nullptr;
 	instanceInfo.enabledExtensionCount = 0;
-	instanceInfo.ppEnabledExtensionNames = nullptr;
 	instanceInfo.pApplicationInfo = &appInfo;
+	
 
 	if (enableValidationLayers)
 	{
@@ -409,6 +424,7 @@ bool CreateInstance()
 	instanceInfo.ppEnabledExtensionNames = extensions.data();
 
 	auto ret = vkCreateInstance(&instanceInfo, nullptr, &m_instance);
+	
 	std::cout << ret << std::endl;
 	if (ret != VK_SUCCESS)
 	{
@@ -1072,9 +1088,12 @@ void CreateCommandBuffer()
 		VkDeviceSize offsets = { 0};
 		vkCmdBindVertexBuffers(m_swapChain.commandBuffers[i], 0, 1, vertexBuffers, &offsets);
 
+		vkCmdBindIndexBuffer(m_swapChain.commandBuffers[i], m_indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
 
 		// [Cmd 3: Draw Call]
-		vkCmdDraw(m_swapChain.commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+		//vkCmdDraw(m_swapChain.commandBuffers[i], static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+		vkCmdDrawIndexed(m_swapChain.commandBuffers[i], static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
 		// [Cmd 4: End Render pass]
 		vkCmdEndRenderPass(m_swapChain.commandBuffers[i]);
@@ -1199,54 +1218,163 @@ void CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyF
 	vkBindBufferMemory(m_device, buffer, memory, 0);
 
 }
+
+void CreateIndexBuffer()
+{
+	VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+	VkBuffer stagingbuffer;
+	VkDeviceMemory stagingBufferMemory;
+	
+	CreateBuffer(bufferSize,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+		stagingbuffer,
+		stagingBufferMemory);
+
+	void* data = nullptr;
+	vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+	memcpy(data, indices.data(), size_t(bufferSize));
+	vkUnmapMemory(m_device, stagingBufferMemory);
+
+	CreateBuffer(bufferSize,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		m_indexBuffer, 
+		m_indexBufferMemory);
+	
+
+	CopyBuffer(stagingbuffer, m_indexBuffer, bufferSize);
+
+	vkDestroyBuffer(m_device, stagingbuffer, nullptr);
+	vkFreeMemory(m_device, stagingBufferMemory,nullptr);
+
+}
 void CreateVertexBuffer()
 {
 	VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-
 	VkBuffer stagingbuffer;
 	VkDeviceMemory stagingBufferMemory;
-
 	
-	CreateBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingbuffer, stagingBufferMemory);
+	CreateBuffer(bufferSize,
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,		// ?????
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 
+		stagingbuffer,
+		stagingBufferMemory);
 
 	void* m_data = nullptr;
 	vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &m_data);
 	memcpy(m_data, vertices.data(), size_t(bufferSize));
 	vkUnmapMemory(m_device, stagingBufferMemory);
 
-	CreateBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, m_vertexBuffer, m_vertexBufferMemory);
+	CreateBuffer(bufferSize,
+		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+		m_vertexBuffer, 
+		m_vertexBufferMemory);
+	
+
+	CopyBuffer(stagingbuffer, m_vertexBuffer, bufferSize);
+
+	vkDestroyBuffer(m_device, stagingbuffer, nullptr);
+	vkFreeMemory(m_device, stagingBufferMemory,nullptr);
 	
 }
+
+void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size)
+{
+	VkCommandBufferAllocateInfo allocInfo = {};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	allocInfo.commandPool = m_commandPool;
+	allocInfo.commandBufferCount = 1;
+
+	VkCommandBuffer commandBuffer;
+	vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer);
+	VkCommandBufferBeginInfo beginInfo = {};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;  // notice
+
+	vkBeginCommandBuffer(commandBuffer, &beginInfo);
+	VkBufferCopy copyRegion = {};
+	copyRegion.srcOffset = 0;
+	copyRegion.dstOffset = 0;
+	copyRegion.size = size;
+	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+	vkEndCommandBuffer(commandBuffer);
+
+	VkSubmitInfo submitInfo = {};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffer;
+	vkQueueSubmit(m_graphicQueue, 1, &submitInfo, VK_NULL_HANDLE);
+	vkQueueWaitIdle(m_graphicQueue); // wait to be done
+
+	vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
+
+}
+
 
 void InitVulkan()
 {
 	CreateInstance();
 
+	std::cout << "create instance success\n";
+
 	setupDebugCallback();
+
+	std::cout << "setup debug callbakc success\n";
 
 	CreateSurface();
 
+	std::cout << "create surface success\n";
+
 	GetAPhsicalDevice();
+
+	std::cout<<"enumerate a propert physical devcie success\n";
 
 	CreateLogicalDevice();
 
+	std::cout << "create logical device success\n";
+
 	CreateSwapChain();
+
+	std::cout << "create swapchain success\n";
 
 	CreateImageViews();
 
+	std::cout << "create swapchain image view success\n";
+
 	CreateRenderPass();
+
+	std::cout << " create render pass success\n";
 
 	CreateGraphicsPipline();
 
+	std::cout << "create graphics pipline success\n";
+
 	CreateFramebuffer();
+
+	std::cout << "create framebuffer success\n";
 
 	CreateCommandPool();
 
+	std::cout << "create command pool success\n";
+
+	CreateIndexBuffer();
+
+	std::cout << "create index buffer success\n";
+
 	CreateVertexBuffer();
+
+	std::cout << "create vertex buffer success\n";
 
 	CreateCommandBuffer();
 
+	std::cout << "create command buffer success\n";
+
 	CreateSemphore();
+
+	std::cout << "create sync object success\n";
 }
 
 void drawFrame()
@@ -1329,8 +1457,10 @@ void CleanupVulkan()
 {
 	CleanupSwapChain();
 	vkFreeMemory(m_device, m_vertexBufferMemory, nullptr);
-
 	vkDestroyBuffer(m_device, m_vertexBuffer,nullptr);
+
+	vkFreeMemory(m_device, m_indexBufferMemory, nullptr);
+	vkDestroyBuffer(m_device, m_indexBuffer, nullptr);
 
 	// sync objects
 	for (int i = 0; i < MAX_FRAMES; i++) 
