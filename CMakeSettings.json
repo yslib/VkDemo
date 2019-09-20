@@ -7,8 +7,8 @@
       "inheritEnvironments": [
         "msvc_x64_x64"
       ],
-      "buildRoot": "${env.USERPROFILE}\\CMakeBuilds\\${workspaceHash}\\build\\${name}",
-      "installRoot": "${env.USERPROFILE}\\CMakeBuilds\\${workspaceHash}\\install\\${name}",
+      "buildRoot": "E:\\CMakeBuilds\\${workspaceHash}\\build\\${name}",
+      "installRoot": "E:\\CMakeBuilds\\${workspaceHash}\\install\\${name}",
       "cmakeCommandArgs": "",
       "buildCommandArgs": "-v",
       "ctestCommandArgs": "",
@@ -16,10 +16,6 @@
         {
           "name": "Vulkan_DIR",
           "value": "C:\\VulkanSDK\\1.1.114.0\\Samples\\cmake"
-        },
-        {
-          "name": "glfw3_DIR",
-          "value": "C:\\Program Files\\GLFW\\lib\\cmake\\glfw3"
         }
       ]
     },
@@ -30,8 +26,8 @@
       "inheritEnvironments": [
         "msvc_x64_x64"
       ],
-      "buildRoot": "${env.USERPROFILE}\\CMakeBuilds\\${workspaceHash}\\build\\${name}",
-      "installRoot": "${env.USERPROFILE}\\CMakeBuilds\\${workspaceHash}\\install\\${name}",
+      "buildRoot": "E:\\CMakeBuilds\\${workspaceHash}\\build\\${name}",
+      "installRoot": "E:\\CMakeBuilds\\${workspaceHash}\\install\\${name}",
       "cmakeCommandArgs": "",
       "buildCommandArgs": "-v",
       "ctestCommandArgs": "",
@@ -39,10 +35,6 @@
         {
           "name": "Vulkan_DIR",
           "value": "C:\\VulkanSDK\\1.1.114.0\\Samples\\cmake"
-        },
-        {
-          "name": "glfw3_DIR",
-          "value": "C:\\Program Files\\GLFW\\lib\\cmake\\glfw3"
         }
       ]
     }
