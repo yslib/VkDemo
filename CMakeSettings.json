@@ -7,8 +7,6 @@
       "inheritEnvironments": [
         "msvc_x64_x64"
       ],
-      "buildRoot": "E:\\CMakeBuilds\\${workspaceHash}\\build\\${name}",
-      "installRoot": "E:\\CMakeBuilds\\${workspaceHash}\\install\\${name}",
       "cmakeCommandArgs": "",
       "buildCommandArgs": "-v",
       "ctestCommandArgs": "",
@@ -16,6 +14,10 @@
         {
           "name": "Vulkan_DIR",
           "value": "C:\\VulkanSDK\\1.1.114.0\\Samples\\cmake"
+        },
+        {
+          "name": "BUILD_EXTERBAK",
+          "value": "OFF"
         }
       ]
     },
@@ -26,8 +28,6 @@
       "inheritEnvironments": [
         "msvc_x64_x64"
       ],
-      "buildRoot": "E:\\CMakeBuilds\\${workspaceHash}\\build\\${name}",
-      "installRoot": "E:\\CMakeBuilds\\${workspaceHash}\\install\\${name}",
       "cmakeCommandArgs": "",
       "buildCommandArgs": "-v",
       "ctestCommandArgs": "",
@@ -35,6 +35,10 @@
         {
           "name": "Vulkan_DIR",
           "value": "C:\\VulkanSDK\\1.1.114.0\\Samples\\cmake"
+        },
+        {
+          "name": "BUILD_EXTERBAK",
+          "value": "OFF"
         }
       ]
     }

@@ -13,6 +13,10 @@
 #include <chrono>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/glm.hpp>
+#include <filesystem>
+#include <glslang/Public/ShaderLang.h>
+#include <SPIRV/GlslangToSpv.h>
+#include <StandAlone/DirStackFileIncluder.h>
 
 namespace vk
 {
@@ -36,6 +40,91 @@ const bool enableValidationLayers = true;
 #else
 const bool enableValidationLayers = false;
 #endif
+
+
+std::vector<uint8_t> MakeSPIRV(const std::string& fileName)
+{
+	using namespace std;
+	using namespace std::filesystem;
+	using namespace glslang;
+
+	ifstream glsl(fileName);
+	if (glsl.is_open() == false)
+	{
+		cout << "Failed to open glsl file\n";
+		throw runtime_error("Failed to open glsl file");
+	}
+	
+	string glslCode{ istreambuf_iterator<char>{glsl}, istreambuf_iterator<char>{} };
+
+
+	EShLanguage shaderType;
+
+	const string extension = path(fileName).extension().string();
+
+	if(extension =="vert")
+	{
+		shaderType = EShLangVertex;
+	}else if(extension =="tesc")
+	{
+		shaderType = EShLangTessControl;
+	}else if(extension == "tese")
+	{
+		shaderType = EShLangTessEvaluation;
+	}else if(extension == "geom")
+	{
+		shaderType = EShLangGeometry;
+	}else if(extension == "frag")
+	{
+		shaderType = EShLangFragment;
+	}else if(extension == "comp")
+	{
+		shaderType = EShLangCompute;
+	}else
+	{
+		cout << "Unknown shader type: "<<extension<<endl;
+		return {};
+	}
+
+	TShader shader(shaderType);
+
+	const char* code = glslCode.c_str();
+	shader.setStrings(&code, 1);
+
+	int ClientInputSemanticsVersion = 100;
+	EShTargetClientVersion vkVersion = EShTargetVulkan_1_1;
+	EShTargetLanguageVersion spirvVersion = EShTargetSpv_1_0;
+
+	shader.setEnvInput(EShSourceGlsl, shaderType, EShClientVulkan, ClientInputSemanticsVersion);
+	shader.setEnvClient(EShClientVulkan, vkVersion);
+	shader.setEnvTarget(EshTargetSpv, spirvVersion);
+
+
+	EShMessages msg = (EShMessages)(EShMsgSpvRules|EShMsgVulkanRules);
+
+	const int defaultVersion = 100;
+
+	DirStackFileIncluder includer;
+
+	const string p = path(fileName).parent_path().string();
+	includer.pushExternalLocalDirectory(p);
+
+	string preprocessedGLSL;
+
+	if(shader.preprocess(nullptr,defaultVersion,ENoProfile,false,false,msg,&preprocessedGLSL,includer))
+	{
+		cout << "GLSL preprocessing failed for: " << fileName << endl;
+		cout << shader.getInfoLog() << endl;
+		cout << shader.getInfoDebugLog() << endl;
+	}
+
+	const char* preproccesdGLSLStr = preprocessedGLSL.c_str();
+	shader.setStrings(&preproccesdGLSLStr,1);
+
+	
+	
+	return {};
+}
 
 
 struct UniformBufferObject
