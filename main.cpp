@@ -22,6 +22,7 @@ namespace vk
 {
 }
 
+namespace{
 constexpr int WIDTH = 1024;
 constexpr int HEIGHT = 768;
 constexpr int MAX_FRAMES = 2;
@@ -163,7 +164,6 @@ struct SwapChain
 	VkExtent2D m_extent;
 };
 
-
 struct QueueFamiliy
 {
 	int graphicQueueFamilyIndex = -1;
@@ -197,10 +197,10 @@ struct Vertex
 		desc[0].format = VK_FORMAT_R32G32_SFLOAT;
 		desc[0].offset = offsetof(Vertex, pos);
 
-		//  float£ºVK_FORMAT_R32_SFLOAT
-		//  vec2£ºVK_FORMAT_R32G32_SFLOAT
-		//	vec3£ºVK_FORMAT_R32G32B32_SFLOAT
-		//	vec4£ºVK_FORMAT_R32G32B32A32_SFLOAT
+		//  floatï¿½ï¿½VK_FORMAT_R32_SFLOAT
+		//  vec2ï¿½ï¿½VK_FORMAT_R32G32_SFLOAT
+		//	vec3ï¿½ï¿½VK_FORMAT_R32G32B32_SFLOAT
+		//	vec4ï¿½ï¿½VK_FORMAT_R32G32B32A32_SFLOAT
 		desc[1].binding = 0;
 		desc[1].location = 1;
 		desc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
@@ -759,19 +759,12 @@ void CreateSwapChain()
 	}
 
 	createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-
 	createInfo.surface = m_surface;
-
 	createInfo.minImageCount = imageCount;
-
 	createInfo.imageFormat = m_swapChain.m_surfaceFormat.format;
-
 	createInfo.imageColorSpace = m_swapChain.m_surfaceFormat.colorSpace;
-
 	createInfo.imageExtent = m_swapChain.m_extent;
-
 	createInfo.imageArrayLayers = 1;
-
 	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // NOTICE
 
 	// If the present queue family is not the same as the graphics queue family, we need take more works
@@ -851,7 +844,6 @@ std::vector<char> readFile(const std::string& fileName)
 	{
 		throw std::runtime_error("failed to open file");
 	}
-
 	std::vector<char> buffer(file.tellg());
 	file.seekg(0);
 	file.read(buffer.data(), buffer.size());
@@ -1020,10 +1012,11 @@ void CreateGraphicsPipline()
 	multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	multisampling.sampleShadingEnable = VK_FALSE;
 	multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-	multisampling.minSampleShading = 1.0f;			// optional
-	multisampling.pSampleMask = nullptr;			//optional
-	multisampling.alphaToCoverageEnable = VK_FALSE; //optional
-	multisampling.alphaToOneEnable = VK_FALSE;		//optional
+
+	multisampling.minSampleShading = 1.0f;			   // optional
+	multisampling.pSampleMask = nullptr;			   // optional
+	multisampling.alphaToCoverageEnable = VK_FALSE;    // optional
+	multisampling.alphaToOneEnable = VK_FALSE;		   // optional
 
 	// [Depth and stencil test]
 
@@ -1073,12 +1066,10 @@ void CreateGraphicsPipline()
 	pipelineLayoutInfo.pushConstantRangeCount = 0;	// Optional
 	pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
 
-	if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr,
-		&m_pipelineLayout) != VK_SUCCESS)
+	if(vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr,&m_pipelineLayout) != VK_SUCCESS)
 	{
 		throw std::runtime_error("failed to create pipeline layout!");
 	}
-
 	// [Pipeline ]
 	VkGraphicsPipelineCreateInfo pipelineInfo = {};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -1749,8 +1740,8 @@ void CleanupVulkan()
 	glfwDestroyWindow(m_window);
 	glfwTerminate();
 }
-
-int main()
+}
+int main2()
 {
 	InitVulkan();
 
