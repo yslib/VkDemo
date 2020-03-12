@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.12)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(vlkdemo)
 
@@ -18,13 +18,13 @@ if(glfw3_FOUND)
 message(STATUS "GLFW3 Found")
 endif()
 
+
 find_package(glm CONFIG REQUIRED)
 
 add_executable(vlkdemo )
-target_sources(vlkdemo PRIVATE "main2.cpp")
+target_sources(vlkdemo PRIVATE "main2.cpp" "SPIRVConverter.cpp")
 target_link_libraries(vlkdemo ${Vulkan_LIBRARIES} glfw glm glslang SPIRV)
 target_include_directories(vlkdemo PRIVATE ${Vulkan_INCLUDE_DIRS})
-target_include_directories(vlkdemo PRIVATE ${GLSLANG_INCLUDE_DIRS})
 
 
 # copy the shader to the install directory
