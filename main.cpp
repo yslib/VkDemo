@@ -519,6 +519,7 @@ bool CreateInstance()
 	{
 		instanceInfo.enabledLayerCount = validationLayers.size();
 		instanceInfo.ppEnabledLayerNames = validationLayers.data();
+    std::cout<<"Enable Extensions\n";
 	}
 	else
 	{
@@ -1741,7 +1742,7 @@ void CleanupVulkan()
 	glfwTerminate();
 }
 }
-int main2()
+int main()
 {
 	InitVulkan();
 
