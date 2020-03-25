@@ -1,3 +1,4 @@
+#include <bits/stdint-uintn.h>
 #include <glm/fwd.hpp>
 #include <memory>
 #include <vector>
@@ -39,6 +40,7 @@ const bool enableValidationLayers = true;
 const bool enableValidationLayers = false;
 #endif
 
+using FramebufferResizeEventCallback = std::function<void( void *, int width, int height )>;
 //
 #define VK_CHECK( expr )                                                                       \
 	do {                                                                                       \
@@ -231,13 +233,16 @@ struct VkObject
 	VkObject &operator=( const VkObject & ) = delete;
 	VkObject &operator=( VkObject &&rhs ) noexcept;
 
+	bool Valid() const { return Object != VK_NULL_HANDLE; }
+
 	operator VkObjectType() { return Object; }
 	~VkObject() { Release(); }
 
-  friend std::ofstream & operator<<( std::ofstream & os, const VkObject & object){
-    os<<"[Object: "<<object.Object<<", from Device: "<<object.Device<<"]\n";
-    return os;
-  }
+	friend std::ofstream &operator<<( std::ofstream &os, const VkObject &object )
+	{
+		os << "[Object: " << object.Object << ", from Device: " << object.Device << "]\n";
+		return os;
+	}
 
 protected:
 	std::shared_ptr<VkDeviceObject> Device;
@@ -269,15 +274,30 @@ struct VkSwapchainObject : public VkSwapchainObjectBase
 	using BaseType = VkSwapchainObjectBase;
 	std::vector<VkImage> SwapchainImages;
 	std::vector<VkImageViewObject> SwapchainImageViews;
+	std::shared_ptr<VkSurfaceObject> Surface;
+	VkSurfaceCapabilitiesKHR cap;
 	VkSurfaceFormatKHR SurfaceFormat;
 	VkExtent2D Size;
+	static FramebufferResizeEventCallback Callback;
+
 	VkSwapchainObject( std::shared_ptr<VkDeviceObject> device, std::shared_ptr<VkSurfaceObject> surface );
+  void Update(){
+    *this = VkSwapchainObject(Device,Surface);
+  }
+	void SetResizeCallback( FramebufferResizeEventCallback callback )
+	{
+		Callback = std::move( callback );
+	}
 
 private:
+	static void glfwWindowResizeCallback( GLFWwindow *window, int width, int height )
+	{
+		Callback( nullptr, width, height );
+	}
 	friend class VkDeviceObject;
 	VkSwapchainObject( std::shared_ptr<VkDeviceObject> device, VkSwapchainKHR vkHandle );
 };
-
+FramebufferResizeEventCallback VkSwapchainObject::Callback = FramebufferResizeEventCallback();
 //using VkSwapchainObject = VkObject<VkSwapchainKHR>;
 
 struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
@@ -357,7 +377,7 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 	{
 		return Device;
 	}
-	operator VkDevice() const
+	operator  VkDevice() const
 	{
 		return Device;
 	}
@@ -520,19 +540,20 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 	VkFenceObject CreateFence()
 	{
 		VkFence vkHandle = VK_NULL_HANDLE;
-    VkFenceCreateInfo CI={};
-    CI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    CI.pNext = nullptr;
-    CI.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    VK_CHECK(vkCreateFence(Device,&CI,PhysicalDevice->Instance->AllocationCallback,&vkHandle));
-    assert(vkHandle != VK_NULL_HANDLE);
-    return VkFenceObject(this->shared_from_this(),vkHandle);
+		VkFenceCreateInfo CI = {};
+		CI.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		CI.pNext = nullptr;
+		CI.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+		VK_CHECK( vkCreateFence( Device, &CI, PhysicalDevice->Instance->AllocationCallback, &vkHandle ) );
+		assert( vkHandle != VK_NULL_HANDLE );
+		return VkFenceObject( this->shared_from_this(), vkHandle );
 	}
 
-  void DeleteObject(VkFenceObject && object){
+	void DeleteObject( VkFenceObject &&object )
+	{
 		assert( object.Device->Device == Device );
-    vkDestroyFence(Device,object,PhysicalDevice->Instance->AllocationCallback);
-  }
+		vkDestroyFence( Device, object, PhysicalDevice->Instance->AllocationCallback );
+	}
 
 	friend class VkSurfaceObject;
 	std::shared_ptr<VkPhysicalDeviceObject> PhysicalDevice;
@@ -690,24 +711,25 @@ VkSwapchainObject::VkSwapchainObject( std::shared_ptr<VkDeviceObject> device, st
 {
 	assert( surface );
 	Device = std::move( device );
-	VkSurfaceCapabilitiesKHR cap;
-
-	Size = { 1024, 768 };
+	Surface = std::move( surface );
+	VK_CHECK( vkGetPhysicalDeviceSurfaceCapabilitiesKHR( *( Device->PhysicalDevice ), *Surface, &cap ) );
 	SurfaceFormat = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
 
-	VK_CHECK( vkGetPhysicalDeviceSurfaceCapabilitiesKHR( *( Device->PhysicalDevice ), *surface, &cap ) );
+	int width, height;
+	glfwGetFramebufferSize( Surface->Window.get(), &width, &height );
+	Size = { uint32_t( width ), uint32_t( height ) };
+
 	VkSwapchainCreateInfoKHR swapchainCI = {};
 	swapchainCI.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 	swapchainCI.pNext = nullptr;
 	swapchainCI.oldSwapchain = VK_NULL_HANDLE;
-	swapchainCI.surface = *surface;
+	swapchainCI.surface = *Surface;
 	swapchainCI.minImageCount = 3;
 	swapchainCI.presentMode = VK_PRESENT_MODE_MAILBOX_KHR;
 	swapchainCI.imageExtent = Size;
 	swapchainCI.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	swapchainCI.imageFormat = SurfaceFormat.format;
 	swapchainCI.imageColorSpace = SurfaceFormat.colorSpace;
-
 	swapchainCI.minImageCount = cap.minImageCount + 1;
 	swapchainCI.imageArrayLayers = 1;
 	swapchainCI.preTransform = cap.currentTransform;
@@ -752,6 +774,9 @@ VkSwapchainObject::VkSwapchainObject( std::shared_ptr<VkDeviceObject> device, st
 		VkImageViewObject imageViewObject;
 		SwapchainImageViews[ i ] = Device->CreateImageView( CI );
 	}
+
+	// set callback
+	glfwSetFramebufferSizeCallback( Surface->Window.get(), glfwWindowResizeCallback );
 }
 
 // VkDeviceObject definition

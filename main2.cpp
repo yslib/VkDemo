@@ -3,8 +3,11 @@
 #include <bits/stdint-uintn.h>
 #include <limits>
 #include <memory>
+#include <type_traits>
 #include <vulkan/vulkan_core.h>
 #include "SPIRVConverter.h"
+
+using namespace std;
 
 std::vector<char> OpenSprivFromFile( const std::string &fileName )
 {
@@ -19,18 +22,108 @@ std::vector<char> OpenSprivFromFile( const std::string &fileName )
 	return code;
 }
 
-using namespace std;
+std::vector<VkFramebufferObject> CreateFramebuffers( VkDeviceObject *device, VkSwapchainObject *swapchain, VkRenderPass renderpass )
+{
+	assert( swapchain );
+	assert( device );
+	assert( renderpass != VK_NULL_HANDLE );
+
+	std::vector<VkFramebufferObject> framebuffers( swapchain->SwapchainImageViews.size() );
+	framebuffers.resize( swapchain->SwapchainImageViews.size() );  // dependent by swapchain
+	for ( int i = 0; i < swapchain->SwapchainImageViews.size(); i++ ) {
+		VkImageView attachments[] = {
+			swapchain->SwapchainImageViews[ i ]
+		};
+		VkFramebufferCreateInfo CI = {};
+		CI.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		CI.pNext = nullptr;
+		CI.renderPass = renderpass;	 // coupled
+		CI.attachmentCount = 1;
+		CI.pAttachments = attachments;
+		CI.width = swapchain->Size.width;
+		CI.height = swapchain->Size.height;
+		CI.layers = 1;
+		framebuffers[ i ] = device->CreateFramebuffer( CI );
+	}
+
+	return framebuffers;
+}
+
+vector<VkCommandBuffer> CreateCommandList( VkDeviceObject *device,
+										   VkCommandPool cmdPool,
+
+										   VkRenderPass renderpass,
+										   VkPipeline pipeline,
+										   VkExtent2D renderArea,
+										   std::vector<VkFramebufferObject> &fb )
+{
+	vector<VkCommandBuffer> cmdBuffers( fb.size() );
+
+	VkCommandBufferAllocateInfo cbAllocInfo = {};
+	cbAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cbAllocInfo.pNext = nullptr;
+	cbAllocInfo.commandPool = cmdPool;
+	cbAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+	cbAllocInfo.commandBufferCount = cmdBuffers.size();
+	VK_CHECK( vkAllocateCommandBuffers( *device, &cbAllocInfo, cmdBuffers.data() ) );
+
+	for ( size_t i = 0; i < cmdBuffers.size(); i++ ) {
+		VkCommandBufferBeginInfo beginInfo = {};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.pNext = nullptr;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		beginInfo.pInheritanceInfo = nullptr;
+		VK_CHECK( vkBeginCommandBuffer( cmdBuffers[ i ], &beginInfo ) );
+
+		VkRenderPassBeginInfo renderPassBeginInfo = {};
+		renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		renderPassBeginInfo.pNext = nullptr;
+		renderPassBeginInfo.renderArea.offset = { 0, 0 };
+		renderPassBeginInfo.renderArea.extent = renderArea;
+		renderPassBeginInfo.renderPass = renderpass;
+		renderPassBeginInfo.framebuffer = fb[ i ];	// renderpass begininfo is coupled with framebuffer
+
+		VkClearValue clearColor = { 0.f, 0.f, 0.f, 1.0f };
+		renderPassBeginInfo.clearValueCount = 1;
+		renderPassBeginInfo.pClearValues = &clearColor;
+
+		vkCmdBeginRenderPass( cmdBuffers[ i ], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE );
+
+		vkCmdBindPipeline( cmdBuffers[ i ], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline );
+		vkCmdDraw( cmdBuffers[ i ], 3, 1, 0, 0 );
+
+		vkCmdEndRenderPass( cmdBuffers[ i ] );
+
+		VK_CHECK( vkEndCommandBuffer( cmdBuffers[ i ] ) );
+	}
+	return cmdBuffers;
+}
+
 int main()
 {
+	// Initialize VK
 	auto instance = std::make_shared<VkInstanceObject>();
 	auto physicalDevice = std::make_shared<VkPhysicalDeviceObject>( instance );
 	auto device = std::make_shared<VkDeviceObject>( physicalDevice );
 	auto surface = std::make_shared<VkSurfaceObject>( instance, device );
+
 	auto swapchain = std::make_shared<VkSwapchainObject>( device, surface );
-	//
-	//
-	// SPIRVConverter test
-	//SPIRVConverter cvt;
+	bool framebufferResize = false;
+	FramebufferResizeEventCallback callback = [&framebufferResize]( void *userData, int width, int height ) {
+		framebufferResize = true;
+	};
+	swapchain->SetResizeCallback( callback );
+
+	VkCommandPoolCreateInfo cpCI = {};
+	cpCI.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	cpCI.pNext = nullptr;
+	cpCI.flags = 0;	 // Important
+	auto commandPool = device->CreateCommandPool( cpCI );
+
+	VkRenderPassObject renderpass;
+
+	// Configuration Pipeline
+
 	auto vShader = OpenSprivFromFile( "vert.spv" );
 	auto fShader = OpenSprivFromFile( "frag.spv" );
 
@@ -223,7 +316,7 @@ int main()
 		1,
 		&dependency,
 	};
-	auto renderpass = device->CreateRenderPass( rpCI );
+	renderpass = device->CreateRenderPass( rpCI );
 
 	VkGraphicsPipelineCreateInfo gpCI = {};
 	gpCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -246,74 +339,10 @@ int main()
 
 	auto pipeline = device->CreatePipeline( gpCI );
 
-
-  // Create framebuffers
-  // Framebuffer is coupled with renderpass
-
-	std::vector<VkFramebufferObject> framebuffers( swapchain->SwapchainImageViews.size() );
-	for ( int i = 0; i < swapchain->SwapchainImageViews.size(); i++ ) {
-		VkImageView attachments[] = {
-			swapchain->SwapchainImageViews[ i ]
-		};
-		VkFramebufferCreateInfo CI = {};
-		CI.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		CI.pNext = nullptr;
-		CI.renderPass = renderpass; // coupled
-		CI.attachmentCount = 1;
-		CI.pAttachments = attachments;
-		CI.width = swapchain->Size.width;
-		CI.height = swapchain->Size.height;
-		CI.layers = 1;
-		framebuffers[ i ] = device->CreateFramebuffer( CI );
-	}
-
-	VkCommandPoolCreateInfo cpCI = {};
-	cpCI.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-	cpCI.pNext = nullptr;
-	cpCI.flags = 0;	 // Important
-	auto commandPool = device->CreateCommandPool( cpCI );
-
-	vector<VkCommandBuffer> cmdBuffers( framebuffers.size() );
-	VkCommandBufferAllocateInfo cbAllocInfo = {};
-	cbAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	cbAllocInfo.pNext = nullptr;
-	cbAllocInfo.commandPool = commandPool;
-	cbAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	cbAllocInfo.commandBufferCount = cmdBuffers.size();
-
-	VK_CHECK( vkAllocateCommandBuffers( *device, &cbAllocInfo, cmdBuffers.data() ) );
-
-	for ( size_t i = 0; i < cmdBuffers.size(); i++ ) {
-		VkCommandBufferBeginInfo beginInfo = {};
-		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfo.pNext = nullptr;
-		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-		beginInfo.pInheritanceInfo = nullptr;
-		VK_CHECK( vkBeginCommandBuffer( cmdBuffers[ i ], &beginInfo ) );
-
-		VkRenderPassBeginInfo renderPassInfo = {};
-		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-		renderPassInfo.pNext = nullptr;
-		renderPassInfo.framebuffer = framebuffers[ i ]; // renderpass begininfo is coupled with framebuffer
-		renderPassInfo.renderArea.offset = { 0, 0 };
-		renderPassInfo.renderArea.extent = swapchain->Size;
-		renderPassInfo.renderPass = renderpass;
-
-		VkClearValue clearColor = { 0.f, 0.f, 0.f, 1.0f };
-		renderPassInfo.clearValueCount = 1;
-		renderPassInfo.pClearValues = &clearColor;
-
-		vkCmdBeginRenderPass( cmdBuffers[ i ], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE );
-
-		vkCmdBindPipeline( cmdBuffers[ i ], VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline );
-		vkCmdDraw( cmdBuffers[ i ], 3, 1, 0, 0 );
-
-		vkCmdEndRenderPass( cmdBuffers[ i ] );
-
-		VK_CHECK( vkEndCommandBuffer( cmdBuffers[ i ] ) );
-	}
-	// auto imageAvaliableSemaphore = device->CreateSemaphore();
-	// auto renderFinishedSemaphore = device->CreateSemaphore();
+	// Create Framebuffers
+	//
+	auto framebuffers = CreateFramebuffers( device.get(), swapchain.get(), renderpass );
+	auto cmdBuffers = CreateCommandList( device.get(), commandPool, renderpass, pipeline, swapchain->Size, framebuffers );
 
 	constexpr int flightImagesCount = 3;
 	vector<VkSemaphoreObject> imageAvaliableSemaphores;
@@ -325,22 +354,33 @@ int main()
 		renderFinishedSemaphores.push_back( device->CreateSemaphore() );
 		fences.push_back( device->CreateFence() );
 	}
+	vector<VkFence> f( fences.begin(), fences.end() );
 
 	uint32_t currentFrameIndex = 0;
 
 	while ( glfwWindowShouldClose( surface->Window.get() ) == false ) {
-		VkFence waitFences = fences[ currentFrameIndex ];
-		assert( waitFences != VK_NULL_HANDLE );
-		VK_CHECK( vkWaitForFences( *device, 1, &waitFences, VK_TRUE, std::numeric_limits<uint64_t>::max() ) );
-		VK_CHECK( vkResetFences( *device, 1, &waitFences ) );
+		VK_CHECK( vkWaitForFences( *device, 1, f.data() + currentFrameIndex, VK_TRUE, std::numeric_limits<uint64_t>::max() ) );
+		VK_CHECK( vkResetFences( *device, 1, f.data() + currentFrameIndex ) );
 		uint32_t imageIndex;
-		vkAcquireNextImageKHR( *device, *swapchain, std::numeric_limits<uint64_t>::max(), imageAvaliableSemaphores[ currentFrameIndex ], VK_NULL_HANDLE, &imageIndex );
 
-		// There are serveral things that you need to present before submitting cmds
-		// [1] semaphores which need to be done
-		// [2] Pipeline Stage need to be waited
-		// [3] command buffer need to be submitted
-		// [4] semaphores need to signal after draw call finished
+		auto res = vkAcquireNextImageKHR( *device, *swapchain, std::numeric_limits<uint64_t>::max(), imageAvaliableSemaphores[ currentFrameIndex ], VK_NULL_HANDLE, &imageIndex );
+		if ( res == VK_ERROR_OUT_OF_DATE_KHR ) {
+			VK_CHECK( vkDeviceWaitIdle( *device ) );
+
+			fences = vector<VkFenceObject>();
+			for ( int i = 0; i < flightImagesCount; i++ ) {
+				fences.push_back( device->CreateFence() );
+			}
+			f = vector<VkFence>( fences.begin(), fences.end() );
+
+			framebuffers = vector<VkFramebufferObject>();
+			vkFreeCommandBuffers( *device, commandPool, cmdBuffers.size(), cmdBuffers.data() );
+			swapchain->Update();
+			framebuffers = CreateFramebuffers( device.get(), swapchain.get(), renderpass );
+			cmdBuffers = CreateCommandList( device.get(), commandPool, renderpass, pipeline, swapchain->Size, framebuffers );
+			framebufferResize = false;
+			continue;
+		}
 
 		VkSemaphore waitSemaphores[] = { imageAvaliableSemaphores[ currentFrameIndex ] };
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
@@ -373,7 +413,22 @@ int main()
 			nullptr
 		};
 
-		VK_CHECK( vkQueuePresentKHR( device->GraphicsQueue, &presentInfo ) );
+		res = vkQueuePresentKHR( device->GraphicsQueue, &presentInfo );
+		if ( res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR ) {
+			VK_CHECK( vkDeviceWaitIdle( *device ) );
+			fences = vector<VkFenceObject>();
+			for ( int i = 0; i < flightImagesCount; i++ ) {
+				fences.push_back( device->CreateFence() );
+			}
+			f = vector<VkFence>( fences.begin(), fences.end() );
+
+			framebuffers = vector<VkFramebufferObject>();
+			vkFreeCommandBuffers( *device, commandPool, cmdBuffers.size(), cmdBuffers.data() );
+			swapchain->Update();
+			framebuffers = CreateFramebuffers( device.get(), swapchain.get(), renderpass );
+			cmdBuffers = CreateCommandList( device.get(), commandPool, renderpass, pipeline, swapchain->Size, framebuffers );
+			framebufferResize = false;
+		}
 		currentFrameIndex = ( currentFrameIndex + 1 ) % flightImagesCount;
 	}
 
