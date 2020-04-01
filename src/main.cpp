@@ -19,10 +19,10 @@
 #include <chrono>
 
 #define STB_IMAGE_IMPLEMENTATION
-#include "3rdparty/stb_image.h"
+#include <stb_image.h>
 
 #define TINYOBJLOADER_IMPLEMENTATION
-#include "3rdparty/tiny_obj_loader.h"
+#include <tiny_obj_loader.h>
 
 using namespace std;
 
