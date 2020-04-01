@@ -1,8 +1,11 @@
 [project-build]
 command=cmake --build . --config Debug -- -j4
 cwd=$(VIM_ROOT)/build
+output=quickfix
+pos=tab
 
 [project-run]
 command=./build/vlkdemo
 cwd=<root>
-output=terminal
+output=quickfix
+pos=tab
