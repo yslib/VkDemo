@@ -8,7 +8,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS ON)
 
 add_subdirectory(3rdparty/glslang)
-#add_subdirectory(3rdparty/VMCore)
 
 find_package(Vulkan REQUIRED)
 find_package(glfw3 CONFIG REQUIRED)
@@ -24,3 +23,8 @@ target_include_directories(${PROJ_NAME}  PRIVATE ${Vulkan_INCLUDE_DIRS} "3rdpart
 # copy the shader to the install directory
 install(TARGETS ${PROJ_NAME} LIBRARY DESTINATION "lib" RUNTIME DESTINATION "bin" ARCHIVE DESTINATION "lib")
 install(DIRECTORY "shader" DESTINATION "bin")
+
+set(TEST_SPIRV On)
+if(TEST_SPIRV)
+  add_subdirectory(test)
+endif()

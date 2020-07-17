@@ -1,42 +1,17 @@
 {
-"$schema": "https://puremourning.github.io/vimspector/schema/vimspector.schema.json#",
-"adapters":{
-    "vscode-cpptools": {
-      "attach": {
-        "pidProperty": "processId",
-        "pidSelect": "ask"
-      },
-      "command": [
-        "${gadgetDir}/vscode-cpptools/debugAdapters/OpenDebugAD7"
-      ],
-      "name": "cppdbg"
-    }
-  },
-
   "configurations": {
-    "vscode-cpptools: Launch": {
+    "Launch": {
       "adapter": "vscode-cpptools",
       "configuration": {
         "type": "cppdbg",
         "request": "launch",
-        "program": "${workspaceRoot}/build/vlkdemo",
+        "program": "${workspaceRoot}/build/VkDemo",
         "args": [],
         "cwd": "${workspaceRoot}",
-        "environment": [],
         "externalConsole": true,
-        "MIMode": "gdb",
-        "logging": {
-          "engineLogging": true
-        },
-        "stopAtEntry":true
-      },
-      "breakpoints": {
-        "exception": {
-          "caught": "",
-          "uncaught": "Y"
+        "MIMode": "gdb"
       }
     }
 }
+  }
   
-}
-}

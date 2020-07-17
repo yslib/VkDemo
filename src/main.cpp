@@ -110,6 +110,11 @@ std::pair<std::vector<Vertex>, std::vector<uint32_t>> LoadObjFile( const std::st
 	return std::make_pair( std::move( vertices ), std::move( indices ) );
 }
 
+vector<unsigned int> OpenSprivFromGLSLFile(const string & fileName,SPIRVConverter::ShaderType type)
+{
+  return SPIRVConverter().GLSL2SPRIVFromFile(fileName,type);
+}
+
 vector<char> OpenSprivFromFile( const std::string &fileName )
 {
 	ifstream fileIn( fileName, std::ios::binary | std::ios::ate );
@@ -295,13 +300,15 @@ int main()
 
 	// Configuration Pipeline
 
-	auto vShader = OpenSprivFromFile( "vert.spv" );
-	auto fShader = OpenSprivFromFile( "frag.spv" );
+	// auto vShader = OpenSprivFromFile( "shader/vert.spv" );
+	// auto fShader = OpenSprivFromFile( "frag.spv" );
+  auto vShader = OpenSprivFromGLSLFile("shader/test.vert",SPIRVConverter::ShaderType::Vertex);
+  auto fShader = OpenSprivFromGLSLFile("shader/test.frag",SPIRVConverter::ShaderType::Fragment);
 
 	VkShaderModuleCreateInfo vsCI = {};
 	vsCI.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	vsCI.pNext = nullptr;
-	vsCI.codeSize = vShader.size();
+	vsCI.codeSize = vShader.size() * sizeof(unsigned int);
 	vsCI.pCode = (uint32_t *)vShader.data();
 
 	auto vs = device->CreateShader( vsCI );
@@ -309,7 +316,7 @@ int main()
 	VkShaderModuleCreateInfo fsCI = {};
 	fsCI.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	fsCI.pNext = nullptr;
-	fsCI.codeSize = fShader.size();
+	fsCI.codeSize = fShader.size() * sizeof(unsigned int);
 	fsCI.pCode = (uint32_t *)fShader.data();
 
 	auto fs = device->CreateShader( fsCI );

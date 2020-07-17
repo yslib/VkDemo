@@ -82,8 +82,10 @@ struct VkInstanceObject
 		for ( int i = 0; i < props.size(); i++ ) {
 			std::cout << props[ i ].extensionName << std::endl;
 		}
-		glfwInit();
-
+		if(glfwInit() != GLFW_TRUE){
+      std::cout<<"glfw init failed\n";
+      exit(-1);
+    };
 		uint32_t extCount = 0;
 		auto ext = glfwGetRequiredInstanceExtensions( &extCount );
 		std::vector<const char *> extNames( ext, ext + extCount );
@@ -106,7 +108,7 @@ struct VkInstanceObject
 
 		CI.pApplicationInfo = nullptr;
 		////Check validationLayers
-		if ( enableValidationLayers ) {
+		if ( false ) { // warning: If layer is enabled, the VK_LAYER_PATH must be set
 			CI.enabledLayerCount = validationLayers.size();
 			CI.ppEnabledLayerNames = validationLayers.data();
 		}
