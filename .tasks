@@ -1,11 +1,11 @@
 [project-build]
-command=cmake --build . --config Debug -- -j4
+command=cmake --build . --config Debug -- -j8
 cwd=$(VIM_ROOT)/build
 output=shell
 pos=tab
 
 [project-run]
-command=./build/VkDemo
+command=./build/mesh
 cwd=$(VIM_ROOT)
 output=shell
 pos=tab

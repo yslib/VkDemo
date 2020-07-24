@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <cstring>
+#include <functional>
 #include <type_traits>
 #include <unordered_map>
 #include <vulkan/vulkan_core.h>
@@ -82,10 +83,10 @@ struct VkInstanceObject
 		for ( int i = 0; i < props.size(); i++ ) {
 			std::cout << props[ i ].extensionName << std::endl;
 		}
-		if(glfwInit() != GLFW_TRUE){
-      std::cout<<"glfw init failed\n";
-      exit(-1);
-    };
+		if ( glfwInit() != GLFW_TRUE ) {
+			std::cout << "glfw init failed\n";
+			exit( -1 );
+		};
 		uint32_t extCount = 0;
 		auto ext = glfwGetRequiredInstanceExtensions( &extCount );
 		std::vector<const char *> extNames( ext, ext + extCount );
@@ -108,7 +109,7 @@ struct VkInstanceObject
 
 		CI.pApplicationInfo = nullptr;
 		////Check validationLayers
-		if ( false ) { // warning: If layer is enabled, the VK_LAYER_PATH must be set
+		if ( false ) {	// warning: If layer is enabled, the VK_LAYER_PATH must be set
 			CI.enabledLayerCount = validationLayers.size();
 			CI.ppEnabledLayerNames = validationLayers.data();
 		}
@@ -154,6 +155,10 @@ private:
 	  const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
 	  void *pUserData )
 	{
+    (void)messageSeverity;
+    (void)messageType;
+    (void)pUserData;
+
 		std::cerr << "Validation layer: " << pCallbackData->pMessage << std::endl;
 		return VK_FALSE;
 	}
@@ -189,6 +194,9 @@ struct VkPhysicalDeviceObject
 {
 	std::shared_ptr<VkInstanceObject> Instance;
 	std::vector<VkMemoryType> AllowedMemoryType;
+	std::vector<VkQueueFamilyProperties> QueueFamilies;
+	VkPhysicalDeviceFeatures PhysicalDeviceFeatures;
+
 	VkPhysicalDeviceObject( std::shared_ptr<VkInstanceObject> instance ) :
 	  Instance( std::move( instance ) )
 	{
@@ -198,11 +206,11 @@ struct VkPhysicalDeviceObject
 		vector<VkPhysicalDevice> dev( count );
 		VK_CHECK( vkEnumeratePhysicalDevices( *Instance, &count, dev.data() ) );
 		std::cout << "There are " << count << " physical device(s)\n";
+
 		for ( int i = 0; i < count; i++ ) {
 			VkPhysicalDeviceProperties prop;
 			auto d = dev[ i ];
 			vkGetPhysicalDeviceProperties( d, &prop );
-
 			VkPhysicalDeviceMemoryProperties memProp;
 			vkGetPhysicalDeviceMemoryProperties( d, &memProp );
 			for ( int i = 0; i < memProp.memoryTypeCount; i++ ) {
@@ -211,9 +219,19 @@ struct VkPhysicalDeviceObject
 
 			//vkGetPhysicalDeviceProperties(d,&prop);
 			//vkGetPhysicalDeviceFeatures(d, &feat);
-
 			// We don't do any assumption for device, just choose the first physical device
 			PhysicalDevice = d;
+
+			// Get queue families
+			uint32_t count = 0;
+			vkGetPhysicalDeviceQueueFamilyProperties( PhysicalDevice, &count, nullptr );
+			assert( count > 0 );
+			std::vector<VkQueueFamilyProperties> que( count );
+			vkGetPhysicalDeviceQueueFamilyProperties( PhysicalDevice, &count, que.data() );
+
+			// Get PhysicalDeviceFeatures
+			vkGetPhysicalDeviceFeatures( PhysicalDevice, &PhysicalDeviceFeatures );
+
 			break;
 		}
 	}
@@ -237,6 +255,7 @@ struct VkPhysicalDeviceObject
 		assert( false && "Failed to find proper memory type" );
 		return ~0;
 	}
+
 	VkFormat FindSupportedFormat( const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features )
 	{
 		for ( VkFormat format : candidates ) {
@@ -266,6 +285,31 @@ struct VkPhysicalDeviceObject
 		if ( counts & VK_SAMPLE_COUNT_2_BIT ) { return VK_SAMPLE_COUNT_2_BIT; }
 
 		return VK_SAMPLE_COUNT_1_BIT;
+	}
+
+	const VkPhysicalDeviceFeatures &GetPhysicalDeviceFeatures()
+	{
+		return PhysicalDeviceFeatures;
+	}
+
+	int GetQueueIndex( VkQueueFlagBits queueFlags ) const
+	{
+		const auto count = QueueFamilies.size();
+		for ( int i = 0; i < count; i++ ) {
+			const auto q = QueueFamilies[ i ];
+			if ( q.queueCount > 0 && q.queueFlags & queueFlags ) {
+				return i;
+			}
+		}
+		std::cout << "specified queue is not found\n";
+		return -1;
+	}
+
+	VkBool32 SurfaceSupport() const
+	{
+		VkBool32 support = VK_FALSE;
+		//vkGetPhysicalDeviceSurfaceSupportKHR( *(PhysicalDevice ), GraphicsQueueIndex, Surface, &support );
+		return support;
 	}
 
 	VkFormat FindDepthFormat()
@@ -402,22 +446,7 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 		CI.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
 		CI.pNext = nullptr;
 
-		// queue family
-		uint32_t count = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties( *PhysicalDevice, &count, nullptr );
-		assert( count > 0 );
-		std::vector<VkQueueFamilyProperties> que( count );
-		vkGetPhysicalDeviceQueueFamilyProperties( *PhysicalDevice, &count, que.data() );
-
-		for ( int i = 0; i < count; i++ ) {
-			const auto q = que[ i ];
-
-			if ( q.queueCount > 0 && q.queueFlags & VK_QUEUE_GRAPHICS_BIT ) {
-				GraphicsQueueIndex = i;
-				break;
-			}
-		}
-		assert( GraphicsQueueIndex != -1 );
+		GraphicsQueueIndex = PhysicalDevice->GetQueueIndex( VK_QUEUE_GRAPHICS_BIT );
 
 		VkDeviceQueueCreateInfo queCI = {};
 		queCI.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -426,10 +455,11 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 		queCI.queueCount = 1;
 		float pri = 1.0;
 		queCI.pQueuePriorities = &pri;
+
 		VkPhysicalDeviceFeatures feat = {};
-		vkGetPhysicalDeviceFeatures( *PhysicalDevice, &feat );
+		feat = PhysicalDevice->GetPhysicalDeviceFeatures();
 		feat.samplerAnisotropy = VK_TRUE;
-    feat.sampleRateShading = VK_TRUE;
+		feat.sampleRateShading = VK_TRUE;
 
 		CI.pQueueCreateInfos = &queCI;
 		CI.queueCreateInfoCount = 1;
@@ -447,7 +477,6 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 		vkGetDeviceQueue( Device, GraphicsQueueIndex, 0, &GraphicsQueue );
 
 		// Allocate Memory
-
 		// for(int i = 0 ; i < physicaldevice->allowedmemorytype.size();i++){
 		// vkmemoryallocateinfo ci={
 		// vk_structure_type_memory_allocate_info,
@@ -770,7 +799,6 @@ struct VkSurfaceObject
 			exit( -1 );
 		}
 		glfwWindowHint( GLFW_CLIENT_API, GLFW_NO_API );
-		VkResult a;
 		auto win = glfwCreateWindow( 1024, 768, "Vulkan", nullptr, nullptr );
 		assert( win );
 		Window.reset( win );
@@ -785,11 +813,12 @@ struct VkSurfaceObject
 			std::cout << "This device does not support present feature\n";
 			exit( -1 );
 		}
+
 		vkGetDeviceQueue( *Device, Device->GraphicsQueueIndex, 0, &PresentQueue );
 
-		uint32_t featureCount = 0;
-		VkSurfaceCapabilitiesKHR cap;
-		vkGetPhysicalDeviceSurfaceCapabilitiesKHR( *( Device->PhysicalDevice ), Surface, &cap );
+		//uint32_t featureCount = 0;
+		// VkSurfaceCapabilitiesKHR cap;
+		// vkGetPhysicalDeviceSurfaceCapabilitiesKHR( *( Device->PhysicalDevice ), Surface, &cap );
 
 		uint32_t count;
 		vkGetPhysicalDeviceSurfaceFormatsKHR( *( Device->PhysicalDevice ), Surface, &count, nullptr );
@@ -807,6 +836,7 @@ struct VkSurfaceObject
 		vkGetPhysicalDeviceSurfacePresentModesKHR( *( Device->PhysicalDevice ), Surface, &count, nullptr );
 		supportedPresentMode.resize( count );
 		vkGetPhysicalDeviceSurfacePresentModesKHR( *( Device->PhysicalDevice ), Surface, &count, supportedPresentMode.data() );
+
 	}
 	~VkSurfaceObject()
 	{
@@ -975,7 +1005,7 @@ public:
 		ColorImage = Device->CreateImage( colorImageCI );
 		std::cout << "Sample Num: " << NumSamples << std::endl;
 		ColorImageView = ColorImage.CreateImageView( Swapchain->SurfaceFormat.format, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT );
-    TransitionImageLayout(ColorImage,Swapchain->SurfaceFormat.format,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,1);
+		TransitionImageLayout( ColorImage, Swapchain->SurfaceFormat.format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, 1 );
 
 		// ImageDepth
 		const VkFormat depthImageFormat = Device->PhysicalDevice->FindDepthFormat();
@@ -1208,9 +1238,7 @@ public:
 				  { 0.f, 0.f, 0.f, 1.f },
 				},
 				{ { 1.f, 0 } },
-        {
-          {0.f,0.f,0.f,1.f}
-        }
+				{ { 0.f, 0.f, 0.f, 1.f } }
 			};
 
 			const VkRenderPassBeginInfo renderPassBeginInfo = {
@@ -1298,9 +1326,7 @@ public:
 		std::vector<VkFramebufferObject> framebuffers( Swapchain->SwapchainImageViews.size() );
 		framebuffers.resize( Swapchain->SwapchainImageViews.size() );  // dependent by swapchain
 		for ( int i = 0; i < Swapchain->SwapchainImageViews.size(); i++ ) {
-      
-			const VkImageView attachments[] = 
-      {
+			const VkImageView attachments[] = {
 				ColorImageView,
 				DepthImageView,
 				Swapchain->SwapchainImageViews[ i ]
@@ -1448,7 +1474,7 @@ void VkBufferObject::SetData( const void *data, size_t size )
 
 VkImageViewObject VkImageObject::CreateImageView( VkFormat format, VkImageViewType viewType, VkImageAspectFlags aspectFlags )
 {
-  assert(Object != VK_NULL_HANDLE);
+	assert( Object != VK_NULL_HANDLE );
 	const VkImageViewCreateInfo viewInfo = {
 		VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 		nullptr,
@@ -1464,8 +1490,7 @@ VkImageViewObject VkImageObject::CreateImageView( VkFormat format, VkImageViewTy
 		  0,
 		  Desc.mipLevels,
 		  0,
-		  1 
-    }
+		  1 }
 	};
 	return Device->CreateImageView( viewInfo );
 }

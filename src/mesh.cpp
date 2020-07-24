@@ -3,6 +3,7 @@
 #include <GLFW/glfw3.h>
 #include <bits/stdint-uintn.h>
 #include <cstdint>
+#include <cstdlib>
 #include <glm/fwd.hpp>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/hash.hpp>
@@ -39,6 +40,7 @@ struct Vertex
 	glm::vec3 Color;
 	glm::vec2 texCoord;
 	bool operator==( const Vertex &other ) const
+
 	{
 		return Pos == other.Pos && Color == other.Color && texCoord == other.texCoord;
 	}
@@ -55,6 +57,20 @@ struct hash<Vertex>
 };
 
 }  // namespace std
+
+std::vector<char> LoadRawData( const string &fileName, size_t x, size_t y, size_t z )
+{
+	ifstream inFile( fileName, ios::binary );
+	if ( inFile.is_open() == false ) {
+		cerr << "Open raw data failed\n";
+		exit( -1 );
+	}
+	auto size = x * y * z;
+	vector<char> data( size );
+	inFile.read( data.data(), size );
+	return data;
+}
+
 glm::mat4 UpdateModelMatrix()
 {
 	UniformBufferObject ubo = {};
@@ -110,9 +126,9 @@ std::pair<std::vector<Vertex>, std::vector<uint32_t>> LoadObjFile( const std::st
 	return std::make_pair( std::move( vertices ), std::move( indices ) );
 }
 
-vector<unsigned int> OpenSprivFromGLSLFile(const string & fileName,SPIRVConverter::ShaderType type)
+vector<unsigned int> OpenSprivFromGLSLFile( const string &fileName, SPIRVConverter::ShaderType type )
 {
-  return SPIRVConverter().GLSL2SPRIVFromFile(fileName,type);
+	return SPIRVConverter().GLSL2SPRIVFromFile( fileName, type );
 }
 
 vector<char> OpenSprivFromFile( const std::string &fileName )
@@ -128,7 +144,7 @@ vector<char> OpenSprivFromFile( const std::string &fileName )
 	return code;
 }
 
-std::pair<VkBufferObject, VkExtent3D> CreateTextureStagingBuffer( VkDeviceObject *device, const std::string &fileName ,uint32_t  * mipLevel)
+std::pair<VkBufferObject, VkExtent3D> CreateTextureStagingBuffer( VkDeviceObject *device, const std::string &fileName, uint32_t *mipLevel )
 {
 	int width, height, channel;
 	auto p = stbi_load( fileName.c_str(), &width, &height, &channel, STBI_rgb_alpha );
@@ -152,33 +168,19 @@ std::pair<VkBufferObject, VkExtent3D> CreateTextureStagingBuffer( VkDeviceObject
 	bufferObject.SetData( p, size );
 	stbi_image_free( p );
 
-  if(mipLevel)
-  {
-    *mipLevel = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
-  }
+	if ( mipLevel ) {
+		*mipLevel = static_cast<uint32_t>( std::floor( std::log2( std::max( width, height ) ) ) ) + 1;
+	}
 	return std::make_pair( std::move( bufferObject ), VkExtent3D{ uint32_t( width ), uint32_t( height ), 1 } );
 }
 
-int main()
+
+void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
+
 {
 	auto v = LoadObjFile( "resources/chalet.obj" );
-
 	const auto vertices = std::move( v.first );
 	const auto indices = std::move( v.second );
-
-	// Initialize VK
-	auto instance = std::make_shared<VkInstanceObject>();
-	auto physicalDevice = std::make_shared<VkPhysicalDeviceObject>( instance );
-	auto device = std::make_shared<VkDeviceObject>( physicalDevice );
-	auto surface = std::make_shared<VkSurfaceObject>( instance, device );
-	auto swapchain = std::make_shared<VkSwapchainObject>( device, surface );
-	auto context = std::make_shared<VkContext>( device, swapchain );
-
-	bool framebufferResize = false;
-	FramebufferResizeEventCallback callback = [&framebufferResize]( void *userData, int width, int height ) {
-		framebufferResize = true;
-	};
-	context->Swapchain->SetResizeCallback( callback );
 
 	// Create Vertex Data
 	VkBufferCreateInfo stagingBufferCreateInfo = {
@@ -223,14 +225,13 @@ int main()
 	( context->IndexBuffer ).SetData( indices.data(), indexBufferSize );
 	context->CopyBuffer( vertexStagingBuffer, vertexBuffer, vertices.size() * sizeof( Vertex ) );
 	context->VertexCount = indices.size();
-  std::cout<<"Vertex Count: "<<context->VertexCount<<std::endl;
-
+	std::cout << "Vertex Count: " << context->VertexCount << std::endl;
 
 	// Create Texture Staging Buffer
-  uint32_t mipLevels = 1;
-	auto tex = CreateTextureStagingBuffer( device.get(), "resources/chalet.jpg" ,&mipLevels);
+	uint32_t mipLevels = 1;
+	auto tex = CreateTextureStagingBuffer( device.get(), "resources/chalet.jpg", &mipLevels );
 
-  std::cout<<"Mipmap Levels: "<<mipLevels<<std::endl;
+	std::cout << "Mipmap Levels: " << mipLevels << std::endl;
 	assert( tex.first.Valid() );
 	VkImageCreateInfo imageCI = {
 		VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
@@ -240,7 +241,7 @@ int main()
 		VK_FORMAT_R8G8B8A8_UNORM,
 		tex.second,
 		mipLevels,	// mipLevel
-		1,	// arraylayers
+		1,			// arraylayers
 		VK_SAMPLE_COUNT_1_BIT,
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -251,11 +252,11 @@ int main()
 	};
 
 	auto imageObject = device->CreateImage( imageCI );
-	auto imageViewObject = imageObject.CreateImageView( VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT);
+	auto imageViewObject = imageObject.CreateImageView( VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_VIEW_TYPE_2D, VK_IMAGE_ASPECT_COLOR_BIT );
 
-	context->TransitionImageLayout( imageObject, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,mipLevels);
+	context->TransitionImageLayout( imageObject, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels );
 	context->CopyImage( tex.first, imageObject, tex.second );
-  context->GenerateMipmaps(imageObject,imageCI.extent,mipLevels);
+	context->GenerateMipmaps( imageObject, imageCI.extent, mipLevels );
 	//context->TransitionImageLayout( imageObject, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
 	//								VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,mipLevels);
 
@@ -265,17 +266,17 @@ int main()
 		0,
 		VK_FILTER_LINEAR,
 		VK_FILTER_LINEAR,
-		VK_SAMPLER_MIPMAP_MODE_LINEAR, // mipMapMode
+		VK_SAMPLER_MIPMAP_MODE_LINEAR,	// mipMapMode
 		VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT,
 		VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT,
 		VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT,
-		0.f, // mipLodBias
+		0.f,  // mipLodBias
 		VK_TRUE,
 		16,
 		VK_FALSE,
 		VK_COMPARE_OP_ALWAYS,
-		0,  //minlod
-		float(mipLevels),  //maxlod
+		0,					 //minlod
+		float( mipLevels ),	 //maxlod
 		VK_BORDER_COLOR_INT_OPAQUE_BLACK,
 		VK_FALSE
 	};
@@ -302,13 +303,13 @@ int main()
 
 	// auto vShader = OpenSprivFromFile( "shader/vert.spv" );
 	// auto fShader = OpenSprivFromFile( "frag.spv" );
-  auto vShader = OpenSprivFromGLSLFile("shader/test.vert",SPIRVConverter::ShaderType::Vertex);
-  auto fShader = OpenSprivFromGLSLFile("shader/test.frag",SPIRVConverter::ShaderType::Fragment);
+	auto vShader = OpenSprivFromGLSLFile( "shader/test.vert", SPIRVConverter::ShaderType::Vertex );
+	auto fShader = OpenSprivFromGLSLFile( "shader/test.frag", SPIRVConverter::ShaderType::Fragment );
 
 	VkShaderModuleCreateInfo vsCI = {};
 	vsCI.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	vsCI.pNext = nullptr;
-	vsCI.codeSize = vShader.size() * sizeof(unsigned int);
+	vsCI.codeSize = vShader.size() * sizeof( unsigned int );
 	vsCI.pCode = (uint32_t *)vShader.data();
 
 	auto vs = device->CreateShader( vsCI );
@@ -316,7 +317,7 @@ int main()
 	VkShaderModuleCreateInfo fsCI = {};
 	fsCI.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	fsCI.pNext = nullptr;
-	fsCI.codeSize = fShader.size() * sizeof(unsigned int);
+	fsCI.codeSize = fShader.size() * sizeof( unsigned int );
 	fsCI.pCode = (uint32_t *)fShader.data();
 
 	auto fs = device->CreateShader( fsCI );
@@ -537,7 +538,7 @@ int main()
 	multCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 	multCreateInfo.pNext = nullptr;
 	multCreateInfo.sampleShadingEnable = VK_TRUE;
-  multCreateInfo.minSampleShading = .2f;
+	multCreateInfo.minSampleShading = .2f;
 	multCreateInfo.rasterizationSamples = context->NumSamples;
 	multCreateInfo.minSampleShading = 1.f;
 	multCreateInfo.pSampleMask = nullptr;
@@ -592,13 +593,13 @@ int main()
 		{
 		  0,										 // flags
 		  context->Swapchain->SurfaceFormat.format,	 // format
-      context->NumSamples,
-		  VK_ATTACHMENT_LOAD_OP_CLEAR,				 // loadOp
-		  VK_ATTACHMENT_STORE_OP_STORE,				 // storeOp
-		  VK_ATTACHMENT_LOAD_OP_DONT_CARE,			 // stencilLoadOp
-		  VK_ATTACHMENT_STORE_OP_DONT_CARE,			 // stencilStoreOp
-		  VK_IMAGE_LAYOUT_UNDEFINED,				 // initialLayout
-		  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL			 // finalLayout
+		  context->NumSamples,
+		  VK_ATTACHMENT_LOAD_OP_CLEAR,				// loadOp
+		  VK_ATTACHMENT_STORE_OP_STORE,				// storeOp
+		  VK_ATTACHMENT_LOAD_OP_DONT_CARE,			// stencilLoadOp
+		  VK_ATTACHMENT_STORE_OP_DONT_CARE,			// stencilStoreOp
+		  VK_IMAGE_LAYOUT_UNDEFINED,				// initialLayout
+		  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL	// finalLayout
 		},
 		{ 0,
 		  device->PhysicalDevice->FindDepthFormat(),
@@ -609,17 +610,15 @@ int main()
 		  VK_ATTACHMENT_STORE_OP_DONT_CARE,
 		  VK_IMAGE_LAYOUT_UNDEFINED,
 		  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL },
-    {
-      0,
-      context->Swapchain->SurfaceFormat.format,
-      VK_SAMPLE_COUNT_1_BIT,
-      VK_ATTACHMENT_LOAD_OP_CLEAR,
-      VK_ATTACHMENT_STORE_OP_STORE,
-      VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-      VK_ATTACHMENT_STORE_OP_DONT_CARE,
-      VK_IMAGE_LAYOUT_UNDEFINED,
-      VK_IMAGE_LAYOUT_PRESENT_SRC_KHR
-    }
+		{ 0,
+		  context->Swapchain->SurfaceFormat.format,
+		  VK_SAMPLE_COUNT_1_BIT,
+		  VK_ATTACHMENT_LOAD_OP_CLEAR,
+		  VK_ATTACHMENT_STORE_OP_STORE,
+		  VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+		  VK_ATTACHMENT_STORE_OP_DONT_CARE,
+		  VK_IMAGE_LAYOUT_UNDEFINED,
+		  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR }
 	};
 
 	const vector<VkAttachmentReference> colorAttacRef = {
@@ -632,10 +631,10 @@ int main()
 		1,
 		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
 	};
-  const VkAttachmentReference resolveAttachRef={
-    2,
-    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-  };
+	const VkAttachmentReference resolveAttachRef = {
+		2,
+		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+	};
 	const vector<VkSubpassDescription> triangleSubPass = {
 		{ 0,
 		  VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -643,9 +642,9 @@ int main()
 		  nullptr,
 		  uint32_t( colorAttacRef.size() ),
 		  colorAttacRef.data(),
-      &resolveAttachRef, // resolve attachment
+		  &resolveAttachRef,  // resolve attachment
 		  &depthAttachRef,
-		  0, // preserve attachment 
+		  0,  // preserve attachment
 		  nullptr }
 	};
 
@@ -693,7 +692,6 @@ int main()
 	gpCI.subpass = 0;  // index
 	gpCI.basePipelineHandle = VK_NULL_HANDLE;
 	gpCI.basePipelineIndex = -1;
-  
 
 	context->RenderArea = context->Swapchain->Size;
 	auto pipeline = device->CreatePipeline( gpCI );
@@ -713,7 +711,7 @@ int main()
 
 	ubo.proj[ 1 ][ 1 ] *= -1;
 
-	while ( glfwWindowShouldClose( surface->Window.get() ) == false ) {
+	while ( glfwWindowShouldClose( context->Swapchain->Surface->Window.get() ) == false ) {
 		// Update Uniform matrix
 		ubo.model = UpdateModelMatrix();
 
@@ -726,5 +724,23 @@ int main()
 	}
 
 	vkDeviceWaitIdle( *device );
-	return 0;
+}
+int main()
+{
+	// Initialize VK
+	auto instance = std::make_shared<VkInstanceObject>();
+	auto physicalDevice = std::make_shared<VkPhysicalDeviceObject>( instance );
+	auto device = std::make_shared<VkDeviceObject>( physicalDevice );
+	auto surface = std::make_shared<VkSurfaceObject>( instance, device );
+	auto swapchain = std::make_shared<VkSwapchainObject>( device, surface );
+	auto context = std::make_shared<VkContext>( device, swapchain );
+
+	bool framebufferResize = false;
+	FramebufferResizeEventCallback callback = [ &framebufferResize ]( void *userData, int width, int height ) {
+		framebufferResize = true;
+	};
+	context->Swapchain->SetResizeCallback( callback );
+
+	mesh( device, context );
+  return 0;
 }
