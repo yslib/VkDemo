@@ -155,10 +155,10 @@ private:
 	  const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
 	  void *pUserData )
 	{
+
     (void)messageSeverity;
     (void)messageType;
     (void)pUserData;
-
 		std::cerr << "Validation layer: " << pCallbackData->pMessage << std::endl;
 		return VK_FALSE;
 	}

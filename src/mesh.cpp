@@ -174,11 +174,58 @@ std::pair<VkBufferObject, VkExtent3D> CreateTextureStagingBuffer( VkDeviceObject
 	return std::make_pair( std::move( bufferObject ), VkExtent3D{ uint32_t( width ), uint32_t( height ), 1 } );
 }
 
+void vol( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
+{
+	// prepare data
+	auto d = LoadRawData( "resources/mixfrac160x240x40.raw", 160, 240, 40 );
+	static const auto vertices = vector<float>{
+		0, 0, 0,
+		1, 0, 0,
+		1, 0, 1,
+		0, 0, 1,
+		0, 1, 0,
+		1, 1, 0,
+		1, 1, 1,
+		0, 1, 1
+	};
+	static const auto indices = vector<uint32_t>{
+		0, 5, 1, 0, 4, 5,
+		1, 5, 6, 1, 6, 2,
+		6, 2, 3, 7, 6, 3,
+		7, 3, 4, 4, 3, 0,
+		5, 6, 4, 7, 4, 6,
+		3, 2, 0, 0, 2, 1
+	};
+
+	//create buffer
+	VkBufferCreateInfo vertBufCI = {
+		VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		nullptr,
+		0,
+		vertices.size() * sizeof( float ),
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_SHARING_MODE_EXCLUSIVE,
+		0,
+		nullptr
+	};
+
+	VkBufferCreateInfo idxBufCI = {
+		VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+		nullptr,
+		0,
+		indices.size() * sizeof( uint32_t ),
+		VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+		VK_SHARING_MODE_EXCLUSIVE,
+		0,
+		nullptr
+	};
+}
 
 void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 
 {
 	auto v = LoadObjFile( "resources/chalet.obj" );
+
 	const auto vertices = std::move( v.first );
 	const auto indices = std::move( v.second );
 
@@ -742,5 +789,5 @@ int main()
 	context->Swapchain->SetResizeCallback( callback );
 
 	mesh( device, context );
-  return 0;
+	return 0;
 }
