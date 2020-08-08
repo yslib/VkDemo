@@ -387,15 +387,16 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 
 	VkPipelineShaderStageCreateInfo shaderStageCreateInfos[ 2 ] = { vssCI, fssCI };
 
-	VkVertexInputBindingDescription inputBindingDesc[] = {
-	{ 0,				 //binding
-		  sizeof( Vertex ),	 // stride
-		  VK_VERTEX_INPUT_RATE_VERTEX }
+	VkVertexInputBindingDescription inputBindingDesc[] = 
+  {
+	    {0,				 // the index of vulkan buffer object in vkCmdBindVertexBuffers
+		   sizeof( Vertex ),	 // stride
+		   VK_VERTEX_INPUT_RATE_VERTEX }
 	};
 	VkVertexInputAttributeDescription inputAttribDesc[] = {
 		{
 		  0,						   // location
-		  0,						   // binding
+		  0,						   // binding index
 		  VK_FORMAT_R32G32B32_SFLOAT,  // format2
 		  offsetof( Vertex, Pos )	   // offset
 		},
@@ -411,13 +412,13 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 
 	UniformBufferObject ubo = {};
 
-	// descriptor layout
+	// descriptor 
 	VkDescriptorSetLayoutBinding bindings[] = {
 		// uniform binding
 		{
 		  0,								  // binding
 		  VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,  // type
-		  1,								  //count
+		  1,								  //count: array or not represented in shader
 		  VK_SHADER_STAGE_VERTEX_BIT,		  // stageFlags
 		  nullptr							  //immutable sampler
 		},
@@ -427,7 +428,8 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 		  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
 		  1,
 		  VK_SHADER_STAGE_FRAGMENT_BIT,
-		  nullptr }
+		  nullptr 
+    }
 	};
 
 	VkDescriptorSetLayoutCreateInfo descSetLayoutCI = {};

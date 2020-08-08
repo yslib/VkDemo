@@ -155,10 +155,9 @@ private:
 	  const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
 	  void *pUserData )
 	{
-
-    (void)messageSeverity;
-    (void)messageType;
-    (void)pUserData;
+		(void)messageSeverity;
+		(void)messageType;
+		(void)pUserData;
 		std::cerr << "Validation layer: " << pCallbackData->pMessage << std::endl;
 		return VK_FALSE;
 	}
@@ -329,6 +328,112 @@ private:
 	VkPhysicalDevice PhysicalDevice;
 };
 
+struct DepthStencilStateInfo
+{
+	bool EnableDepthTest = false;
+	bool EnableDepthWrite = false;
+	VkCompareOp CompareFunc = VK_COMPARE_OP_LESS;
+	bool EnableDepthBoundsTest = false;
+	bool EableStencilTest = false;
+	// front/back stencilop
+	float MinDepthBounds = 0.f;
+	float MaxDepthBounds = 1.f;
+};
+
+struct RasterizationStateInfo
+{
+	bool EnableDepthClamp = false;
+	bool EnableRasterizerDiscard = false;
+	VkPolygonMode PolygonMode = VK_POLYGON_MODE_FILL;
+	VkCullModeFlags CullMode = VK_CULL_MODE_BACK_BIT;
+	VkFrontFace FrontFace = VK_FRONT_FACE_CLOCKWISE;
+	bool EnableDepthBias = false;
+	float BiasConstantFactor = 0.f;
+	float BiasClamp = 0.f;
+	float BiasSlopeFactor = 0.f;
+};
+
+struct SampleStateInfo
+{
+	VkSampleCountFlagBits SampleCount = VK_SAMPLE_COUNT_1_BIT;
+};
+
+struct InputBinding
+{
+	uint32_t BufferIndex = 0;
+	uint32_t Location = 0;
+	uint32_t Stride = 0;
+	uint32_t Offset = 0;
+	VkFormat Format = VK_FORMAT_UNDEFINED;
+	// could be represent by component type and number seperately
+	// When other graphics api considered, representing seperately is better
+};
+
+struct InputLayout
+{
+	InputBinding *Bindings = nullptr;
+	uint32_t BindingCount = 0;
+};
+
+struct UniformBinding{
+  uint32_t BindingPoint = 0;
+  VkDescriptorType UniformType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  VkShaderStageFlags ShaderStage = VK_SHADER_STAGE_ALL;
+};
+
+struct UniformLayoutInfo{
+  UniformBinding * Bindings = nullptr;
+  uint32_t BindingCount = 0;
+};
+
+struct BlendStateInfo
+{
+	bool EnableBlend = false;
+	VkBlendFactor SrcColor = VK_BLEND_FACTOR_SRC_ALPHA;
+	VkBlendFactor DstColor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	VkBlendOp ColorBlendFunc = VK_BLEND_OP_ADD;
+	VkBlendFactor SrcAlpha = VK_BLEND_FACTOR_ONE;
+	VkBlendFactor DstAlpha = VK_BLEND_FACTOR_ZERO;
+	VkBlendOp AlphaBlendFunc = VK_BLEND_OP_ADD;
+};
+
+struct GraphicsPipelineStateInfo
+{
+	// Vertex Shader (VkShaderModule)
+	// Fragment Shader (VkShaderModule)
+	// PrimitiveType (VkPrimitiveTopology)
+	// Viewport (VkViewport)
+	// Scissor (VkRect2D)
+  // Descriptor layout (UniformLayout)
+	// Vertex attribute description (InputLayout)
+	// Blend state (BlendStateInfo)
+	// Depth stencil state(DepthStencilStateInfo)
+	// Raster state (RasterizationStateInfo)
+	// Sample state (SampleStateInfo)
+
+  VkShaderModule VertexShader;
+  VkShaderModule FragmentShader;
+  VkPrimitiveTopology PrimitiveType;
+  VkViewport Viewport;
+  VkRect2D Scissor;
+  UniformLayoutInfo UniformLayout; // from descriptorlayout
+  InputLayout VertexInputLayout;
+  BlendStateInfo BlendState;
+  DepthStencilStateInfo DepthStencilState;
+  RasterizationStateInfo RasterizationState;
+  SampleStateInfo SampleState;
+};
+
+struct ComputePipelineStateInfo
+{
+};
+
+struct PipelineStateInfo
+{
+	GraphicsPipelineStateInfo GraphicsPipelineState;
+	ComputePipelineStateInfo ComputePipelineInfo;
+};
+
 struct VkDeviceObject;
 
 template <typename VkObjectType>
@@ -346,7 +451,7 @@ struct VkObject
 
 	operator VkObjectType() { return Object; }
 
-  VkObjectType * operator&(){return &Object;}
+	VkObjectType *operator&() { return &Object; }
 
 	~VkObject() { Release(); }
 
@@ -622,6 +727,12 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 		vkCreateGraphicsPipelines( Device, VK_NULL_HANDLE, 1, &CI, PhysicalDevice->Instance->AllocationCallback, &vkHandle );
 		return VkPipelineObject( this->shared_from_this(), vkHandle );
 	}
+  VkPipelineObject CreatePipeline( const PipelineStateInfo & StateInfo )
+	{
+		VkPipeline vkHandle = VK_NULL_HANDLE;
+		vkCreateGraphicsPipelines( Device, VK_NULL_HANDLE, 1, nullptr, PhysicalDevice->Instance->AllocationCallback, &vkHandle );
+		return VkPipelineObject( this->shared_from_this(), vkHandle );
+	}
 
 	void DeleteObject( VkPipelineObject &&object )
 	{
@@ -776,6 +887,8 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 		vkDestroySampler( Device, object, PhysicalDevice->Instance->AllocationCallback );
 	}
 
+
+
 	friend class VkSurfaceObject;
 	std::shared_ptr<VkPhysicalDeviceObject> PhysicalDevice;
 	uint32_t GraphicsQueueIndex = -1;
@@ -839,7 +952,6 @@ struct VkSurfaceObject
 		vkGetPhysicalDeviceSurfacePresentModesKHR( *( Device->PhysicalDevice ), Surface, &count, nullptr );
 		supportedPresentMode.resize( count );
 		vkGetPhysicalDeviceSurfacePresentModesKHR( *( Device->PhysicalDevice ), Surface, &count, supportedPresentMode.data() );
-
 	}
 	~VkSurfaceObject()
 	{
