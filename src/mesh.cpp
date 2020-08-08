@@ -388,7 +388,7 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 	VkPipelineShaderStageCreateInfo shaderStageCreateInfos[ 2 ] = { vssCI, fssCI };
 
 	VkVertexInputBindingDescription inputBindingDesc[] = {
-		{ 0,				 //binding
+	{ 0,				 //binding
 		  sizeof( Vertex ),	 // stride
 		  VK_VERTEX_INPUT_RATE_VERTEX }
 	};
@@ -459,7 +459,8 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 	context->DescriptorPool = device->CreateDescriptorPool( dpCI );
 
 	vector<VkDescriptorSetLayout> layouts( swapchainImageCount, setlayout );
-	VkDescriptorSetAllocateInfo dsAllocInfo = {
+	VkDescriptorSetAllocateInfo dsAllocInfo = 
+  {
 		VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 		nullptr,
 		context->DescriptorPool,
@@ -762,7 +763,8 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 		// Update Uniform matrix
 		ubo.model = UpdateModelMatrix();
 
-		for ( int i = 0; i < swapchainImageCount; i++ ) {
+		for ( int i = 0; i < swapchainImageCount; i++ ) 
+    {
 			uboBuffers[ i ].SetData( &ubo, sizeof( UniformBufferObject ) );
 		}
 

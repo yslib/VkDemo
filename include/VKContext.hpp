@@ -345,6 +345,9 @@ struct VkObject
 	bool Valid() const { return Object != VK_NULL_HANDLE; }
 
 	operator VkObjectType() { return Object; }
+
+  VkObjectType * operator&(){return &Object;}
+
 	~VkObject() { Release(); }
 
 	friend std::ofstream &operator<<( std::ofstream &os, const VkObject &object )
