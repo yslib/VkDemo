@@ -7,6 +7,7 @@
 #include <functional>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <vulkan/vulkan_core.h>
 #ifdef _WIN32
 #define VK_USE_PLATFORM_WIN32_KHR
@@ -362,11 +363,15 @@ struct InputBinding
 {
 	uint32_t BufferIndex = 0;
 	uint32_t Location = 0;
+	VkFormat Format = VK_FORMAT_UNDEFINED;
+
 	uint32_t Stride = 0;
 	uint32_t Offset = 0;
-	VkFormat Format = VK_FORMAT_UNDEFINED;
+
 	// could be represent by component type and number seperately
 	// When other graphics api considered, representing seperately is better
+	//
+	// Note: Stride must be equal for the same buffer index
 };
 
 struct InputLayout
@@ -375,15 +380,19 @@ struct InputLayout
 	uint32_t BindingCount = 0;
 };
 
-struct UniformBinding{
-  uint32_t BindingPoint = 0;
-  VkDescriptorType UniformType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  VkShaderStageFlags ShaderStage = VK_SHADER_STAGE_ALL;
+struct UniformBinding
+{
+	uint32_t BindingPoint = 0;
+	uint32_t ArrayLength = 1;
+	VkDescriptorType UniformType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	VkSampler *Sampler = nullptr;
+	VkShaderStageFlags ShaderStage = VK_SHADER_STAGE_ALL;
 };
 
-struct UniformLayoutInfo{
-  UniformBinding * Bindings = nullptr;
-  uint32_t BindingCount = 0;
+struct UniformLayoutInfo
+{
+	UniformBinding *Bindings = nullptr;
+	uint32_t BindingCount = 0;
 };
 
 struct BlendStateInfo
@@ -404,24 +413,24 @@ struct GraphicsPipelineStateInfo
 	// PrimitiveType (VkPrimitiveTopology)
 	// Viewport (VkViewport)
 	// Scissor (VkRect2D)
-  // Descriptor layout (UniformLayout)
+	// Descriptor layout (UniformLayout)
 	// Vertex attribute description (InputLayout)
 	// Blend state (BlendStateInfo)
 	// Depth stencil state(DepthStencilStateInfo)
 	// Raster state (RasterizationStateInfo)
 	// Sample state (SampleStateInfo)
 
-  VkShaderModule VertexShader;
-  VkShaderModule FragmentShader;
-  VkPrimitiveTopology PrimitiveType;
-  VkViewport Viewport;
-  VkRect2D Scissor;
-  UniformLayoutInfo UniformLayout; // from descriptorlayout
-  InputLayout VertexInputLayout;
-  BlendStateInfo BlendState;
-  DepthStencilStateInfo DepthStencilState;
-  RasterizationStateInfo RasterizationState;
-  SampleStateInfo SampleState;
+	VkPipelineShaderStageCreateInfo VertexShader;
+	VkPipelineShaderStageCreateInfo FragmentShader;
+	VkPrimitiveTopology PrimitiveType;
+	VkViewport Viewport;
+	VkRect2D Scissor;
+	UniformLayoutInfo UniformLayout;  // from descriptorlayout
+	InputLayout VertexInputLayout;
+	BlendStateInfo BlendState;
+	DepthStencilStateInfo DepthStencilState;
+	RasterizationStateInfo RasterizationState;
+	SampleStateInfo SampleState;
 };
 
 struct ComputePipelineStateInfo
@@ -475,7 +484,8 @@ using VkImageObjectBase = VkObject<VkImage>;
 
 using VkImageViewObject = VkObject<VkImageView>;
 using VkSwapchainObjectBase = VkObject<VkSwapchainKHR>;
-using VkPipelineObject = VkObject<VkPipeline>;
+using VkPipelineObjectBase = VkObject<VkPipeline>;
+
 using VkShaderModuleObject = VkObject<VkShaderModule>;
 using VkPipelineLayoutObject = VkObject<VkPipelineLayout>;
 using VkRenderPassObject = VkObject<VkRenderPass>;
@@ -543,6 +553,21 @@ private:
 };
 FramebufferResizeEventCallback VkSwapchainObject::Callback = FramebufferResizeEventCallback();
 //using VkSwapchainObject = VkObject<VkSwapchainKHR>;
+//
+struct VkPipelineObject : public VkPipelineObjectBase
+{
+	VkPipelineObject() = default;
+	using BaseType = VkPipelineObjectBase;
+	// Uniform related
+	VkDescriptorPoolObject DescriptorPool;
+	std::vector<VkDescriptorSet> DescriptorSets;
+	VkPipelineLayoutObject PipelineLayout;
+
+protected:
+	friend class VkDeviceObject;
+	VkPipelineObject( std::shared_ptr<VkDeviceObject> device, VkPipeline vkObject ) :
+	  VkPipelineObjectBase( device, vkObject ) {}
+};
 
 struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 {
@@ -727,14 +752,278 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 		vkCreateGraphicsPipelines( Device, VK_NULL_HANDLE, 1, &CI, PhysicalDevice->Instance->AllocationCallback, &vkHandle );
 		return VkPipelineObject( this->shared_from_this(), vkHandle );
 	}
-  VkPipelineObject CreatePipeline( const PipelineStateInfo & StateInfo )
+	VkPipelineObject CreatePipeline( const PipelineStateInfo &StateInfo, std::shared_ptr<VkSwapchainObject> swapchain )
 	{
+		using namespace std;
+
+		// [1] Vertex Input
+		const auto &VertexInputLayout = StateInfo.GraphicsPipelineState.VertexInputLayout;
+		//Check the stride for the same buffer index
+		unordered_map<uint32_t, uint32_t> strideCheck;
+		unordered_set<uint32_t> locationCheck;
+		{
+			for ( int i = 0; i < VertexInputLayout.BindingCount; i++ ) {
+				auto key = VertexInputLayout.Bindings[ i ].BufferIndex;
+				auto value = VertexInputLayout.Bindings[ i ].Stride;
+				auto it = strideCheck.find( key );
+				if ( it == strideCheck.end() ) {
+					strideCheck[ key ] = value;
+				} else if ( strideCheck[ key ] != value ) {
+					cout << "Strides for buffer index " << key << " are not equal\n";
+					exit( -1 );
+				}
+				const auto location = VertexInputLayout.Bindings[ i ].Location;
+				auto it2 = locationCheck.find( location );
+				if ( it2 == locationCheck.end() ) {
+					locationCheck.insert( location );
+				} else {
+					cout << "Deplicated locations\n";
+					exit( -1 );
+				}
+			}
+		}
+		vector<VkVertexInputBindingDescription> inputBindingDesc( strideCheck.size() );
+		for ( const auto &item : strideCheck ) {
+			inputBindingDesc.push_back( { item.first, item.second, VK_VERTEX_INPUT_RATE_VERTEX } );
+		}
+
+		vector<VkVertexInputAttributeDescription> inputAttribDesc( VertexInputLayout.BindingCount );
+		for ( int i = 0; i < inputAttribDesc.size(); i++ ) {
+			inputAttribDesc.push_back( { VertexInputLayout.Bindings[ i ].Location,
+										 VertexInputLayout.Bindings[ i ].BufferIndex,
+										 VertexInputLayout.Bindings[ i ].Format,
+										 VertexInputLayout.Bindings[ i ].Offset } );
+		}
+
+		//[2] descriptor
+		auto const &uniformLayout = StateInfo.GraphicsPipelineState.UniformLayout;
+
+		{
+			unordered_set<uint32_t> Check;
+			for ( int i = 0; i < uniformLayout.BindingCount; i++ ) {
+				const auto value = uniformLayout.Bindings[ i ].BindingPoint;
+				if ( value ) {
+					cout << "Binding point is duplicated";
+					exit( -1 );
+				} else {
+					Check.insert( value );
+				}
+			}
+		}
+		vector<VkDescriptorSetLayoutBinding> layoutBindings( uniformLayout.BindingCount );
+		unordered_map<VkDescriptorType, uint32_t> poolSizeInfo;
+		for ( int i = 0; i < uniformLayout.BindingCount; i++ ) {
+			VkDescriptorSetLayoutBinding temp = {
+				uniformLayout.Bindings[ i ].BindingPoint,
+				uniformLayout.Bindings[ i ].UniformType,
+				uniformLayout.Bindings[ i ].ArrayLength,
+				uniformLayout.Bindings[ i ].ShaderStage,
+				uniformLayout.Bindings[ i ].Sampler
+			};
+			layoutBindings.push_back( temp );
+			++poolSizeInfo[ temp.descriptorType ];
+		}
+
+		VkDescriptorSetLayoutCreateInfo descSetLayoutCI = {};
+		descSetLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		descSetLayoutCI.pNext = nullptr;
+		descSetLayoutCI.bindingCount = layoutBindings.size();
+		descSetLayoutCI.pBindings = layoutBindings.data();
+
+		auto setlayout = CreateDescriptorSetLayout( descSetLayoutCI );
+
+		// Configuration Descriptor Pool
+		const uint32_t swapchainImageCount = swapchain->SwapchainImageViews.size();
+
+		vector<VkDescriptorPoolSize> poolSize;
+		for ( const auto &item : poolSizeInfo ) {
+			VkDescriptorPoolSize size = {
+				item.first,
+				item.second * swapchainImageCount
+			};
+			poolSize.push_back( size );
+		}
+		assert( poolSize.size() == poolSizeInfo.size() );
+
+		VkDescriptorPoolCreateInfo dpCI = {
+			VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+			nullptr,
+			0,
+			swapchainImageCount,
+			static_cast<uint32_t>( poolSize.size() ),
+			poolSize.data()
+		};
+
+		auto descriptorPool = CreateDescriptorPool( dpCI );
+
+		vector<VkDescriptorSetLayout> layouts( swapchainImageCount, setlayout );
+		VkDescriptorSetAllocateInfo dsAllocInfo = {
+			VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+			nullptr,
+			descriptorPool,
+			swapchainImageCount,
+			layouts.data()
+		};
+
+		vector<VkDescriptorSet> descriptorSets( swapchainImageCount );
+		VK_CHECK( vkAllocateDescriptorSets( *this, &dsAllocInfo, descriptorSets.data() ) );
+
+		VkPipelineVertexInputStateCreateInfo vertCreateInfo = {};
+		vertCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		vertCreateInfo.pNext = nullptr;
+		vertCreateInfo.pVertexAttributeDescriptions = inputAttribDesc.data();  //
+		vertCreateInfo.pVertexBindingDescriptions = inputBindingDesc.data();   // stride
+		vertCreateInfo.vertexAttributeDescriptionCount = inputAttribDesc.size();
+		vertCreateInfo.vertexBindingDescriptionCount = inputBindingDesc.size();
+
+		VkPipelineInputAssemblyStateCreateInfo asmCreateInfo = {};	// what to draw  glDrawArrays(GL_TRIANGLES)
+		asmCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+		asmCreateInfo.pNext = nullptr;
+		asmCreateInfo.topology = StateInfo.GraphicsPipelineState.PrimitiveType;
+		asmCreateInfo.primitiveRestartEnable = VK_FALSE;
+
+		// Default setting according to context->Swapchain
+		const auto &viewport = StateInfo.GraphicsPipelineState.Viewport;
+		// viewport.width = swapchain->Size.width;
+		// viewport.height = swapchain->Size.height;
+		// viewport.x = 0;
+		// viewport.y = 0;
+		// viewport.minDepth = 0.f;
+		// viewport.maxDepth = 1.f;
+
+		const auto &scissor = StateInfo.GraphicsPipelineState.Scissor;
+		// scissor.offset = { 0, 0 };
+		// scissor.extent = swapchain->Size;
+
+		VkPipelineViewportStateCreateInfo viewportCreateInfo = {};
+		viewportCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		viewportCreateInfo.pNext = nullptr;
+		viewportCreateInfo.pViewports = &viewport;
+		viewportCreateInfo.viewportCount = 1;
+		viewportCreateInfo.pScissors = &scissor;
+		viewportCreateInfo.scissorCount = 1;
+
+		/////
+		const auto &DSS = StateInfo.GraphicsPipelineState.DepthStencilState;
+		const VkPipelineDepthStencilStateCreateInfo depthStencilStateCI = {
+			VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+			nullptr,
+			0,
+			DSS.EnableDepthTest,		// enable depth test
+			DSS.EnableDepthWrite,		// enable depth write
+			VK_COMPARE_OP_LESS,			// op
+			DSS.EnableDepthBoundsTest,	// depth bound test
+			DSS.EableStencilTest,		// enable stencil test
+			{},							// front
+			{},							// back
+			DSS.MinDepthBounds,			// minDepthBounds
+			DSS.MaxDepthBounds			// maxDepthBounds
+		};
+
+		VkPipelineRasterizationStateCreateInfo rasterCreateInfo = {};
+		const auto &RS = StateInfo.GraphicsPipelineState.RasterizationState;
+		rasterCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		rasterCreateInfo.pNext = nullptr;
+		rasterCreateInfo.depthClampEnable = RS.EnableDepthClamp;
+		rasterCreateInfo.rasterizerDiscardEnable = RS.EnableRasterizerDiscard;
+		rasterCreateInfo.polygonMode = RS.PolygonMode;
+		rasterCreateInfo.lineWidth = 1.0f;
+		rasterCreateInfo.cullMode = RS.CullMode;
+		rasterCreateInfo.frontFace = RS.FrontFace;
+
+		rasterCreateInfo.depthBiasEnable = RS.EnableDepthBias;
+		rasterCreateInfo.depthBiasConstantFactor = RS.BiasConstantFactor;
+		rasterCreateInfo.depthBiasClamp = RS.BiasClamp;
+		rasterCreateInfo.depthBiasSlopeFactor = RS.BiasSlopeFactor;
+
+		VkPipelineMultisampleStateCreateInfo multCreateInfo = {};
+		multCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		multCreateInfo.pNext = nullptr;
+		multCreateInfo.sampleShadingEnable = VK_TRUE;
+		multCreateInfo.minSampleShading = .2f;
+		multCreateInfo.rasterizationSamples = StateInfo.GraphicsPipelineState.SampleState.SampleCount;
+		multCreateInfo.minSampleShading = 1.f;
+		multCreateInfo.pSampleMask = nullptr;
+		multCreateInfo.alphaToOneEnable = VK_FALSE;
+		multCreateInfo.alphaToCoverageEnable = VK_FALSE;
+
+		const auto &BS = StateInfo.GraphicsPipelineState.BlendState;
+		VkPipelineColorBlendAttachmentState blendAttachmentState;
+		blendAttachmentState.colorBlendOp = BS.ColorBlendFunc;
+		blendAttachmentState.alphaBlendOp = BS.AlphaBlendFunc;
+		blendAttachmentState.srcColorBlendFactor = BS.SrcColor;
+		blendAttachmentState.dstColorBlendFactor = BS.DstColor;
+		blendAttachmentState.srcAlphaBlendFactor = BS.SrcAlpha;
+		blendAttachmentState.dstAlphaBlendFactor = BS.DstAlpha;
+		blendAttachmentState.blendEnable = BS.EnableBlend;
+		blendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_G_BIT |
+											  VK_COLOR_COMPONENT_R_BIT |
+											  VK_COLOR_COMPONENT_B_BIT |
+											  VK_COLOR_COMPONENT_A_BIT;
+
+		VkPipelineColorBlendStateCreateInfo bsCI = {};
+		bsCI.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		bsCI.pNext = nullptr;
+		bsCI.pAttachments = &blendAttachmentState;
+		bsCI.attachmentCount = 1;
+		bsCI.logicOpEnable = VK_FALSE;
+		bsCI.logicOp = VK_LOGIC_OP_COPY;
+		bsCI.blendConstants[ 0 ] = 0.0f;
+		bsCI.blendConstants[ 1 ] = 0.0f;
+		bsCI.blendConstants[ 2 ] = 0.0f;
+		bsCI.blendConstants[ 3 ] = 0.0f;
+
+		VkDynamicState dyState[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_LINE_WIDTH };
+		VkPipelineDynamicStateCreateInfo dyCI = {};
+		dyCI.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+		dyCI.pNext = nullptr;
+		dyCI.pDynamicStates = dyState;
+		dyCI.dynamicStateCount = 2;
+
+		// Important: Uniforms
+		VkPipelineLayoutCreateInfo plCI = {};
+		plCI.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		plCI.pNext = nullptr;
+		plCI.setLayoutCount = 1;
+		plCI.pSetLayouts = &setlayout;
+		plCI.pushConstantRangeCount = 0;
+		plCI.pPushConstantRanges = 0;
+		auto pipelineLayout = CreatePipelineLayout( plCI );
+
+
+    // Create pipeline
+    vector<VkPipelineShaderStageCreateInfo> shaderStages{StateInfo.GraphicsPipelineState.VertexShader,StateInfo.GraphicsPipelineState.FragmentShader};
+
+		VkGraphicsPipelineCreateInfo gpCI = {};
+		gpCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		gpCI.pNext = nullptr;
+		gpCI.stageCount = shaderStages.size();
+		gpCI.pStages = shaderStages.data();	// shaders
+		gpCI.pVertexInputState = &vertCreateInfo;
+		gpCI.pInputAssemblyState = &asmCreateInfo;
+		gpCI.pViewportState = &viewportCreateInfo;
+		gpCI.pRasterizationState = &rasterCreateInfo;
+		gpCI.pMultisampleState = &multCreateInfo;
+		gpCI.pDepthStencilState = &depthStencilStateCI;
+		gpCI.pColorBlendState = &bsCI;
+		gpCI.pDynamicState = nullptr;
+		gpCI.layout = pipelineLayout;	// uniforms
+		//TODO::gpCI.renderPass = context->RenderPass;
+		gpCI.subpass = 0;  // index
+		gpCI.basePipelineHandle = VK_NULL_HANDLE;
+		gpCI.basePipelineIndex = -1;
+
 		VkPipeline vkHandle = VK_NULL_HANDLE;
-		vkCreateGraphicsPipelines( Device, VK_NULL_HANDLE, 1, nullptr, PhysicalDevice->Instance->AllocationCallback, &vkHandle );
-		return VkPipelineObject( this->shared_from_this(), vkHandle );
+		vkCreateGraphicsPipelines( Device, VK_NULL_HANDLE, 1, &gpCI, PhysicalDevice->Instance->AllocationCallback, &vkHandle );
+		auto pipeline = VkPipelineObject( this->shared_from_this(), vkHandle );
+
+		pipeline.PipelineLayout = std::move( pipelineLayout );
+		pipeline.DescriptorSets = std::move( descriptorSets );
+		pipeline.DescriptorPool = std::move( descriptorPool );
+		return pipeline;
 	}
 
-	void DeleteObject( VkPipelineObject &&object )
+	void DeleteObject( VkPipelineObjectBase &&object )
 	{
 		assert( object.Device->Device == Device );
 		vkDestroyPipeline( Device, object, PhysicalDevice->Instance->AllocationCallback );
@@ -886,8 +1175,6 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 		assert( object.Device->Device == Device );
 		vkDestroySampler( Device, object, PhysicalDevice->Instance->AllocationCallback );
 	}
-
-
 
 	friend class VkSurfaceObject;
 	std::shared_ptr<VkPhysicalDeviceObject> PhysicalDevice;

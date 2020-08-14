@@ -639,6 +639,7 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 
 	context->PipelineLayout = device->CreatePipelineLayout( plCI );
 
+  // node definition in render pass graph
 	const vector<VkAttachmentDescription> attachmentsDesc = {
 		{
 		  0,										 // flags
@@ -671,22 +672,30 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 		  VK_IMAGE_LAYOUT_PRESENT_SRC_KHR }
 	};
 
-	const vector<VkAttachmentReference> colorAttacRef = {
+  // edge in render pass graph
+	const vector<VkAttachmentReference> colorAttacRef = 
+  {
 		{
 		  0,										// attachment index
 		  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL	// layout
 		},
 	};
-	const VkAttachmentReference depthAttachRef = {
+	const VkAttachmentReference depthAttachRef = 
+  {
 		1,
 		VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
 	};
-	const VkAttachmentReference resolveAttachRef = {
+	const VkAttachmentReference resolveAttachRef = 
+  {
 		2,
 		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
 	};
-	const vector<VkSubpassDescription> triangleSubPass = {
-		{ 0,
+
+  // one subpass at least
+	const vector<VkSubpassDescription> triangleSubPass = 
+  {
+		{ 
+      0,
 		  VK_PIPELINE_BIND_POINT_GRAPHICS,
 		  0,
 		  nullptr,
@@ -695,10 +704,12 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 		  &resolveAttachRef,  // resolve attachment
 		  &depthAttachRef,
 		  0,  // preserve attachment
-		  nullptr }
+		  nullptr 
+    }
 	};
 
-	const vector<VkSubpassDependency> dependency = {
+	const vector<VkSubpassDependency> dependency = 
+  {
 		{ // I don't understand this dependency configuration
 		  VK_SUBPASS_EXTERNAL,
 		  0,
@@ -706,7 +717,8 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 		  VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
 		  0,
 		  VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-		  0 }
+		  0 
+    }
 	};
 	// Important: Use of attachment
 	const VkRenderPassCreateInfo rpCI = {
