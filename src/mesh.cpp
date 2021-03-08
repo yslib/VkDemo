@@ -347,6 +347,8 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 	}
 
 	// Configuration Pipeline
+  //
+  PipelineStateInfo PSO;
 
 	// auto vShader = OpenSprivFromFile( "shader/vert.spv" );
 	// auto fShader = OpenSprivFromFile( "frag.spv" );
@@ -387,6 +389,9 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 
 	VkPipelineShaderStageCreateInfo shaderStageCreateInfos[ 2 ] = { vssCI, fssCI };
 
+  PSO.GraphicsPipelineState.FragmentShader = fssCI;
+  PSO.GraphicsPipelineState.VertexShader = vssCI;
+
 	VkVertexInputBindingDescription inputBindingDesc[] = 
   {
 	    {0,				 // the index of vulkan buffer object in vkCmdBindVertexBuffers
@@ -409,6 +414,15 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 		  VK_FORMAT_R32G32_SFLOAT,
 		  offsetof( Vertex, texCoord ) }
 	};
+
+	const InputBinding inputBindings[] = {
+		{ 0, 0, VK_FORMAT_R32G32B32_SFLOAT, sizeof( Vertex ), offsetof( Vertex, Pos ) },
+		{ 0, 1, VK_FORMAT_R32G32B32_SFLOAT, sizeof( Vertex ), offsetof( Vertex, Color ) },
+		{ 0, 2, VK_FORMAT_R32G32B32_SFLOAT, sizeof( Vertex ), offsetof( Vertex, texCoord ) }
+	};
+
+	PSO.GraphicsPipelineState.VertexInputLayout.Bindings = inputBindings;
+	PSO.GraphicsPipelineState.VertexInputLayout.BindingCount = sizeof( inputBindings ) / sizeof( InputBinding );
 
 	UniformBufferObject ubo = {};
 
@@ -443,7 +457,8 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 	// Configuration Descriptor Pool
 	const uint32_t swapchainImageCount = context->Swapchain->SwapchainImageViews.size();
 
-	const VkDescriptorPoolSize poolSize[] = {
+	const VkDescriptorPoolSize poolSize[] = 
+  {
 		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
 		  swapchainImageCount },
 		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -474,6 +489,10 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 	VK_CHECK( vkAllocateDescriptorSets( *device, &dsAllocInfo, descriptorSets.data() ) );
 
 	// binding resources to descriptor set
+  // po->bindpervertexattribute(buffer,0/*binding*/)
+  // po->bindperuniform(vkbuffer,0/*location*/)
+  // po->bindperuniform(image,1)
+
 	for ( int i = 0; i < swapchainImageCount; i++ ) {
 		const VkDescriptorBufferInfo bufferInfo[] = {
 			{
@@ -517,6 +536,17 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 
 	context->DescriptorSets = std::move( descriptorSets );
 
+  const UniformBinding uniformBindings[]=
+  {
+    {0,1,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,nullptr,VK_SHADER_STAGE_VERTEX_BIT},
+    {1,1,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,nullptr,VK_SHADER_STAGE_FRAGMENT_BIT},
+  };
+
+  PSO.GraphicsPipelineState.UniformLayout.Bindings  = uniformBindings;
+  PSO.GraphicsPipelineState.UniformLayout.BindingCount  = sizeof(uniformBindings)/sizeof(UniformBinding);
+
+
+
 	VkPipelineVertexInputStateCreateInfo vertCreateInfo = {};
 	vertCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	vertCreateInfo.pNext = nullptr;
@@ -530,6 +560,9 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 	asmCreateInfo.pNext = nullptr;
 	asmCreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	asmCreateInfo.primitiveRestartEnable = VK_FALSE;
+
+  PSO.GraphicsPipelineState.PrimitiveType = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
 
 	// Default setting according to context->Swapchain
 	VkViewport viewport;
@@ -552,6 +585,9 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 	viewportCreateInfo.pScissors = &scissor;
 	viewportCreateInfo.scissorCount = 1;
 
+  PSO.GraphicsPipelineState.Viewport = viewport; 
+  PSO.GraphicsPipelineState.Scissor = scissor;
+
 	/////
 	const VkPipelineDepthStencilStateCreateInfo depthStencilStateCI = {
 
@@ -568,6 +604,8 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 		0.0f,				 // minDepthBounds
 		1.0f				 // maxDepthBounds
 	};
+
+  PSO.GraphicsPipelineState.DepthStencilState.EnableDepthTest = true;
 
 	VkPipelineRasterizationStateCreateInfo rasterCreateInfo = {};
 	rasterCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -619,6 +657,8 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 	bsCI.blendConstants[ 1 ] = 0.0f;
 	bsCI.blendConstants[ 2 ] = 0.0f;
 	bsCI.blendConstants[ 3 ] = 0.0f;
+
+  PSO.GraphicsPipelineState.BlendState.EnableBlend = false;
 
 	VkDynamicState dyState[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_LINE_WIDTH };
 	VkPipelineDynamicStateCreateInfo dyCI = {};
@@ -749,14 +789,19 @@ void mesh( shared_ptr<VkDeviceObject> device, shared_ptr<VkContext> context )
 	gpCI.pDepthStencilState = &depthStencilStateCI;
 	gpCI.pColorBlendState = &bsCI;
 	gpCI.pDynamicState = nullptr;
-	gpCI.layout = context->PipelineLayout;	// uniforms
-	gpCI.renderPass = context->RenderPass;
+
+	// gpCI.layout = context->PipelineLayout;	// uniforms
+	// gpCI.renderPass = context->RenderPass;
+
 	gpCI.subpass = 0;  // index
 	gpCI.basePipelineHandle = VK_NULL_HANDLE;
 	gpCI.basePipelineIndex = -1;
 
 	context->RenderArea = context->Swapchain->Size;
-	auto pipeline = device->CreatePipeline( gpCI );
+
+
+  auto pipeline = device->CreatePipeline( gpCI );
+  
 	context->Pipeline = std::move( pipeline );
 
 	context->CreateFramebuffers();

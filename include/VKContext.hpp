@@ -376,7 +376,7 @@ struct InputBinding
 
 struct InputLayout
 {
-	InputBinding *Bindings = nullptr;
+	const InputBinding *Bindings = nullptr;
 	uint32_t BindingCount = 0;
 };
 
@@ -391,7 +391,7 @@ struct UniformBinding
 
 struct UniformLayoutInfo
 {
-	UniformBinding *Bindings = nullptr;
+	const UniformBinding *Bindings = nullptr;
 	uint32_t BindingCount = 0;
 };
 
@@ -404,43 +404,6 @@ struct BlendStateInfo
 	VkBlendFactor SrcAlpha = VK_BLEND_FACTOR_ONE;
 	VkBlendFactor DstAlpha = VK_BLEND_FACTOR_ZERO;
 	VkBlendOp AlphaBlendFunc = VK_BLEND_OP_ADD;
-};
-
-struct GraphicsPipelineStateInfo
-{
-	// Vertex Shader (VkShaderModule)
-	// Fragment Shader (VkShaderModule)
-	// PrimitiveType (VkPrimitiveTopology)
-	// Viewport (VkViewport)
-	// Scissor (VkRect2D)
-	// Descriptor layout (UniformLayout)
-	// Vertex attribute description (InputLayout)
-	// Blend state (BlendStateInfo)
-	// Depth stencil state(DepthStencilStateInfo)
-	// Raster state (RasterizationStateInfo)
-	// Sample state (SampleStateInfo)
-
-	VkPipelineShaderStageCreateInfo VertexShader;
-	VkPipelineShaderStageCreateInfo FragmentShader;
-	VkPrimitiveTopology PrimitiveType;
-	VkViewport Viewport;
-	VkRect2D Scissor;
-	UniformLayoutInfo UniformLayout;  // from descriptorlayout
-	InputLayout VertexInputLayout;
-	BlendStateInfo BlendState;
-	DepthStencilStateInfo DepthStencilState;
-	RasterizationStateInfo RasterizationState;
-	SampleStateInfo SampleState;
-};
-
-struct ComputePipelineStateInfo
-{
-};
-
-struct PipelineStateInfo
-{
-	GraphicsPipelineStateInfo GraphicsPipelineState;
-	ComputePipelineStateInfo ComputePipelineInfo;
 };
 
 struct VkDeviceObject;
@@ -459,6 +422,8 @@ struct VkObject
 	bool Valid() const { return Object != VK_NULL_HANDLE; }
 
 	operator VkObjectType() { return Object; }
+
+	operator VkObjectType() const { return Object; }
 
 	VkObjectType *operator&() { return &Object; }
 
@@ -498,6 +463,47 @@ using VkDeviceMemoryObject = VkObject<VkDeviceMemory>;
 using VkDescriptorSetLayoutObject = VkObject<VkDescriptorSetLayout>;
 using VkDescriptorPoolObject = VkObject<VkDescriptorPool>;
 using VkSamplerObject = VkObject<VkSampler>;
+
+struct GraphicsPipelineStateInfo
+{
+	// Vertex Shader (VkShaderModule)
+	// Fragment Shader (VkShaderModule)
+	// PrimitiveType (VkPrimitiveTopology)
+	// Viewport (VkViewport)
+	// Scissor (VkRect2D)
+	// Descriptor layout (UniformLayout)
+	// Vertex attribute description (InputLayout)
+	// Blend state (BlendStateInfo)
+	// Depth stencil state(DepthStencilStateInfo)
+	// Raster state (RasterizationStateInfo)
+	// Sample state (SampleStateInfo)
+	// RenderPass (VkRenderPassObject)
+	// Subpass index (uint32_t)
+
+	VkPipelineShaderStageCreateInfo VertexShader;
+	VkPipelineShaderStageCreateInfo FragmentShader;
+	VkPrimitiveTopology PrimitiveType;
+	VkViewport Viewport;
+	VkRect2D Scissor;
+	UniformLayoutInfo UniformLayout;  // from descriptorlayout
+	InputLayout VertexInputLayout;
+	BlendStateInfo BlendState;
+	DepthStencilStateInfo DepthStencilState;
+	RasterizationStateInfo RasterizationState;
+	SampleStateInfo SampleState;
+	VkRenderPassObject RenderPass;
+	uint32_t SubpassIndex = 0;
+};
+
+struct ComputePipelineStateInfo
+{
+};
+
+struct PipelineStateInfo
+{
+	GraphicsPipelineStateInfo GraphicsPipelineState;
+	ComputePipelineStateInfo ComputePipelineInfo;
+};
 
 struct VkSurfaceObject;
 
@@ -559,9 +565,11 @@ struct VkPipelineObject : public VkPipelineObjectBase
 	VkPipelineObject() = default;
 	using BaseType = VkPipelineObjectBase;
 	// Uniform related
-	VkDescriptorPoolObject DescriptorPool;
+	// VkDescriptorPoolObject DescriptorPool;  // hold by the context
+	//
 	std::vector<VkDescriptorSet> DescriptorSets;
 	VkPipelineLayoutObject PipelineLayout;
+	VkRenderPassObject RenderPassObject;
 
 protected:
 	friend class VkDeviceObject;
@@ -609,18 +617,23 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 
 		vkGetDeviceQueue( Device, GraphicsQueueIndex, 0, &GraphicsQueue );
 
-		// Allocate Memory
-		// for(int i = 0 ; i < physicaldevice->allowedmemorytype.size();i++){
-		// vkmemoryallocateinfo ci={
-		// vk_structure_type_memory_allocate_info,
-		// nullptr,
-		// 100*1024*1024, // 100 mb
-		// physicaldevice->allowedmemorytype[i].heapindex
-		// };
-		// memory[physicaldevice->allowedmemorytype[i].heapindex]=createdevicememory(ci);
-		// }
+		using namespace std;
 
-		// Get Queue
+		vector<VkDescriptorPoolSize> poolSize{
+			{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10 },
+			{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 10 },
+			{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10 }
+		};
+
+		VkDescriptorPoolCreateInfo dpCI = {
+			VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+			nullptr,
+			0,
+			1,
+			static_cast<uint32_t>( poolSize.size() ),
+			poolSize.data()
+		};
+		DescriptorPool = CreateDescriptorPool( dpCI );
 	}
 	~VkDeviceObject()
 	{
@@ -777,7 +790,7 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 				if ( it2 == locationCheck.end() ) {
 					locationCheck.insert( location );
 				} else {
-					cout << "Deplicated locations\n";
+					cout << "Duplicated locations\n";
 					exit( -1 );
 				}
 			}
@@ -811,18 +824,18 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 			}
 		}
 		vector<VkDescriptorSetLayoutBinding> layoutBindings( uniformLayout.BindingCount );
-		unordered_map<VkDescriptorType, uint32_t> poolSizeInfo;
-		for ( int i = 0; i < uniformLayout.BindingCount; i++ ) {
-			VkDescriptorSetLayoutBinding temp = {
-				uniformLayout.Bindings[ i ].BindingPoint,
-				uniformLayout.Bindings[ i ].UniformType,
-				uniformLayout.Bindings[ i ].ArrayLength,
-				uniformLayout.Bindings[ i ].ShaderStage,
-				uniformLayout.Bindings[ i ].Sampler
-			};
-			layoutBindings.push_back( temp );
-			++poolSizeInfo[ temp.descriptorType ];
-		}
+		// unordered_map<VkDescriptorType, uint32_t> poolSizeInfo;
+		// for ( int i = 0; i < uniformLayout.BindingCount; i++ ) {
+		// VkDescriptorSetLayoutBinding temp = {
+		// uniformLayout.Bindings[ i ].BindingPoint,
+		// uniformLayout.Bindings[ i ].UniformType,
+		// uniformLayout.Bindings[ i ].ArrayLength,
+		// uniformLayout.Bindings[ i ].ShaderStage,
+		// uniformLayout.Bindings[ i ].Sampler
+		// };
+		// layoutBindings.push_back( temp );
+		// ++poolSizeInfo[ temp.descriptorType ];
+		// }
 
 		VkDescriptorSetLayoutCreateInfo descSetLayoutCI = {};
 		descSetLayoutCI.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -835,32 +848,11 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 		// Configuration Descriptor Pool
 		const uint32_t swapchainImageCount = swapchain->SwapchainImageViews.size();
 
-		vector<VkDescriptorPoolSize> poolSize;
-		for ( const auto &item : poolSizeInfo ) {
-			VkDescriptorPoolSize size = {
-				item.first,
-				item.second * swapchainImageCount
-			};
-			poolSize.push_back( size );
-		}
-		assert( poolSize.size() == poolSizeInfo.size() );
-
-		VkDescriptorPoolCreateInfo dpCI = {
-			VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
-			nullptr,
-			0,
-			swapchainImageCount,
-			static_cast<uint32_t>( poolSize.size() ),
-			poolSize.data()
-		};
-
-		auto descriptorPool = CreateDescriptorPool( dpCI );
-
 		vector<VkDescriptorSetLayout> layouts( swapchainImageCount, setlayout );
 		VkDescriptorSetAllocateInfo dsAllocInfo = {
 			VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
 			nullptr,
-			descriptorPool,
+			DescriptorPool,
 			swapchainImageCount,
 			layouts.data()
 		};
@@ -990,15 +982,14 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 		plCI.pPushConstantRanges = 0;
 		auto pipelineLayout = CreatePipelineLayout( plCI );
 
-
-    // Create pipeline
-    vector<VkPipelineShaderStageCreateInfo> shaderStages{StateInfo.GraphicsPipelineState.VertexShader,StateInfo.GraphicsPipelineState.FragmentShader};
+		// Create pipeline
+		vector<VkPipelineShaderStageCreateInfo> shaderStages{ StateInfo.GraphicsPipelineState.VertexShader, StateInfo.GraphicsPipelineState.FragmentShader };
 
 		VkGraphicsPipelineCreateInfo gpCI = {};
 		gpCI.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 		gpCI.pNext = nullptr;
 		gpCI.stageCount = shaderStages.size();
-		gpCI.pStages = shaderStages.data();	// shaders
+		gpCI.pStages = shaderStages.data();	 // shaders
 		gpCI.pVertexInputState = &vertCreateInfo;
 		gpCI.pInputAssemblyState = &asmCreateInfo;
 		gpCI.pViewportState = &viewportCreateInfo;
@@ -1007,9 +998,9 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 		gpCI.pDepthStencilState = &depthStencilStateCI;
 		gpCI.pColorBlendState = &bsCI;
 		gpCI.pDynamicState = nullptr;
-		gpCI.layout = pipelineLayout;	// uniforms
-		//TODO::gpCI.renderPass = context->RenderPass;
-		gpCI.subpass = 0;  // index
+		gpCI.layout = pipelineLayout;  // uniforms
+		gpCI.renderPass = StateInfo.GraphicsPipelineState.RenderPass;
+		gpCI.subpass = StateInfo.GraphicsPipelineState.SubpassIndex;  // index
 		gpCI.basePipelineHandle = VK_NULL_HANDLE;
 		gpCI.basePipelineIndex = -1;
 
@@ -1019,7 +1010,9 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 
 		pipeline.PipelineLayout = std::move( pipelineLayout );
 		pipeline.DescriptorSets = std::move( descriptorSets );
-		pipeline.DescriptorPool = std::move( descriptorPool );
+
+		//pipeline.DescriptorPool = std::move( descriptorPool );
+		pipeline.RenderPassObject = std::move( const_cast<VkRenderPassObject &>( StateInfo.GraphicsPipelineState.RenderPass ) );
 		return pipeline;
 	}
 
@@ -1181,6 +1174,8 @@ struct VkDeviceObject : public std::enable_shared_from_this<VkDeviceObject>
 	uint32_t GraphicsQueueIndex = -1;
 	VkQueue GraphicsQueue = VK_NULL_HANDLE;
 
+	VkDescriptorPoolObject DescriptorPool;
+
 private:
 	VkDevice Device;
 };
@@ -1299,9 +1294,6 @@ struct VkContext
 
 	VkCommandPoolObject TransientCommandPool;
 
-	VkDescriptorPoolObject DescriptorPool;
-	std::vector<VkDescriptorSet> DescriptorSets;
-
 	std::vector<VkFramebufferObject> Framebuffers;
 	VkImageObject DepthImage;
 	VkImageViewObject DepthImageView;
@@ -1309,11 +1301,15 @@ struct VkContext
 	VkImageViewObject ColorImageView;
 	VkSampleCountFlagBits NumSamples = VK_SAMPLE_COUNT_1_BIT;
 
+	VkPipelineObject Pipeline;
 	VkExtent2D RenderArea;
 
-	VkRenderPassObject RenderPass;
-	VkPipelineObject Pipeline;
-	VkPipelineLayoutObject PipelineLayout;
+	//VkPipelineLayoutObject PipelineLayout;
+	//VkRenderPassObject RenderPass;
+	//VkDescriptorPoolObject DescriptorPool;
+
+	std::vector<VkDescriptorSet> DescriptorSets;
+
 	VkBufferObject VertexBuffer;
 	VkBufferObject IndexBuffer;
 	uint32_t VertexCount = 0;
@@ -1613,7 +1609,20 @@ public:
 		EndOneTimeCommands( cmdBuffer );
 	}
 
-	void CreateCommandList()
+  // TODO::
+	void SetVertexBuffer( const VkBufferObject &vertexBuffer )
+	{
+		VkBuffer buffers[] = { vertexBuffer };
+		vkCmdBindVertexBuffers( CmdBuffers[ 0 ], 0, 1, buffers, 0 );
+	}
+
+  // TODO::
+	void SetIndexBuffer( const VkBufferObject &indexBuffer )
+	{
+		vkCmdBindIndexBuffer( CmdBuffers[ 0 ], indexBuffer, 0, VK_INDEX_TYPE_UINT32 );
+	}
+
+	void CreateCommandList()  // TODO:: influenced by the refactor of context and pipeline object
 	{
 		std::vector<VkCommandBuffer> cmdBuffers( Framebuffers.size() );
 
